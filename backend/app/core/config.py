@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-flash"
     OPENAI_MODEL: str = "gpt-4o-mini"
 
+    # Real-Time Web Search & APIs
+    WEB_SEARCH_PROVIDER: str = Field(default="duckduckgo")
+    WEB_SEARCH_API_KEY: str = Field(default="")
+    WEB_SEARCH_MAX_RESULTS: int = Field(default=5)
+    WEB_SEARCH_TIMEOUT: int = Field(default=10)
+
     # Database
     DATABASE_URL: str = Field(
         default=f"sqlite:///{DATA_DIR / 'memorybot.db'}"
@@ -125,6 +131,21 @@ class Settings(BaseSettings):
             self.OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
         if self.OPENAI_API_KEY:
             self.OPENAI_API_KEY = self.OPENAI_API_KEY.strip().strip("'").strip('"')
+
+        # Web Search API Key & Provider fallback
+        if not self.WEB_SEARCH_API_KEY:
+            for env_path_str in env_files_to_load:
+                env_p = Path(env_path_str)
+                if env_p.exists() and env_p.is_file():
+                    from dotenv import dotenv_values
+                    vals = dotenv_values(env_p)
+                    if vals.get("WEB_SEARCH_API_KEY"):
+                        self.WEB_SEARCH_API_KEY = vals["WEB_SEARCH_API_KEY"]
+                        break
+        if not self.WEB_SEARCH_API_KEY and os.environ.get("WEB_SEARCH_API_KEY"):
+            self.WEB_SEARCH_API_KEY = os.environ.get("WEB_SEARCH_API_KEY", "")
+        if self.WEB_SEARCH_API_KEY:
+            self.WEB_SEARCH_API_KEY = self.WEB_SEARCH_API_KEY.strip().strip("'").strip('"')
 
     model_config = SettingsConfigDict(
         env_file=tuple(env_files_to_load),

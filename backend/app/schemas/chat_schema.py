@@ -1,8 +1,16 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, List
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import Optional, List, Any
 from datetime import datetime
 
 from app.schemas.file_schema import AttachmentResponse
+
+class SearchSourceItem(BaseModel):
+    title: str
+    url: str
+    snippet: Optional[str] = ""
+    source_name: Optional[str] = None
+    published_at: Optional[str] = None
+    relevance_score: Optional[float] = 1.0
 
 class MessageBase(BaseModel):
     role: str
@@ -18,7 +26,21 @@ class MessageResponse(MessageBase):
     language: Optional[str] = "en"
     timestamp: datetime
     attachments: List[AttachmentResponse] = []
+    sources: Optional[List[SearchSourceItem]] = None
+    is_realtime: bool = False
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("sources", mode="before")
+    @classmethod
+    def parse_sources(cls, v: Any):
+        if isinstance(v, str):
+            try:
+                import json
+                parsed = json.loads(v)
+                return parsed if isinstance(parsed, list) else None
+            except Exception:
+                return None
+        return v
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="User input message")
@@ -43,6 +65,8 @@ class ChatResponse(BaseModel):
     voice_enabled: bool = True
     extracted_memories: List[ExtractedMemoryItem] = []
     robot_state: str = "HAPPY"
+    sources: Optional[List[SearchSourceItem]] = None
+    is_realtime: bool = False
 
 class RegenerateRequest(BaseModel):
     conversation_id: str = Field(..., description="ID of conversation to regenerate response in")

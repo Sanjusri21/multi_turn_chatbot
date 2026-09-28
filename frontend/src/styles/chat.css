@@ -1168,11 +1168,182 @@
   40% { transform: scale(1); opacity: 1; }
 }
 
+/* ==========================================================================
+   Zara Real-Time Retrieval & Source Cards Styling
+   ========================================================================== */
+
+/* Enhanced Typing Indicator with Status Badges */
+.typing-indicator-container.status-searching {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(14, 165, 233, 0.08);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.15);
+}
+
+.typing-indicator-container.status-reading {
+  border-color: rgba(168, 85, 247, 0.4);
+  background: rgba(168, 85, 247, 0.08);
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.15);
+}
+
+.typing-indicator-container.status-thinking {
+  border-color: rgba(234, 179, 8, 0.4);
+  background: rgba(234, 179, 8, 0.08);
+}
+
+.typing-status-badge {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.typing-status-icon {
+  flex-shrink: 0;
+}
+
+.typing-status-icon.spin-slow {
+  animation: spinSlow 3s linear infinite;
+  color: #38bdf8;
+}
+
+.typing-status-icon.pulse-subtle {
+  animation: pulseSubtle 1.8s ease-in-out infinite;
+  color: #c084fc;
+}
+
+.typing-status-icon.sparkles {
+  color: #00f2fe;
+}
+
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulseSubtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.65; transform: scale(1.08); }
+}
+
+/* Zara Real-time Sources Section */
+.zara-sources-container {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: var(--radius-md, 10px);
+  backdrop-filter: blur(8px);
+}
+
+.zara-sources-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #38bdf8;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.sources-globe-icon {
+  color: #00f2fe;
+}
+
+.zara-sources-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.zara-source-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: calc(33.333% - 6px);
+  min-width: 170px;
+  max-width: 240px;
+  padding: 8px 10px;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  text-decoration: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.zara-source-card:hover {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.45);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0, 242, 254, 0.15);
+}
+
+.source-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.source-card-domain {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #38bdf8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80%;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.source-external-icon {
+  color: var(--text-muted, #94a3b8);
+  opacity: 0.7;
+  flex-shrink: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.zara-source-card:hover .source-external-icon {
+  opacity: 1;
+  transform: translate(1px, -1px);
+  color: #00f2fe;
+}
+
+.source-card-title {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-primary, #f8fafc);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.source-card-date {
+  font-size: 0.68rem;
+  color: var(--text-muted, #94a3b8);
+  margin-top: 4px;
+}
+
 @media (max-width: 768px) {
   .welcome-cards-grid {
     grid-template-columns: 1fr;
   }
   .header-conv-breadcrumb {
     display: none;
+  }
+  .zara-source-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 100%;
   }
 }

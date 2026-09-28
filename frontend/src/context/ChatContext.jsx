@@ -16,6 +16,7 @@ export function ChatProvider({ children }) {
   const [messages, setMessages] = useState([]);
   const [isSending, setIsSending] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [searchingStatus, setSearchingStatus] = useState(null);
 
   // Memories
   const [memories, setMemories] = useState([]);
@@ -308,6 +309,7 @@ export function ChatProvider({ children }) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    setSearchingStatus(null);
     setIsSending(false);
   };
 
@@ -366,8 +368,12 @@ export function ChatProvider({ children }) {
             }
           ]);
         },
+        onStatus: (statusData) => {
+          setSearchingStatus(statusData);
+        },
         onChunk: (chunk) => {
           hasReceivedChunk = true;
+          setSearchingStatus(null);
           accumulatedContent += chunk;
           setMessages((prev) =>
             prev.map((m) =>
@@ -378,6 +384,7 @@ export function ChatProvider({ children }) {
           );
         },
         onDone: (doneData) => {
+          setSearchingStatus(null);
           const assistantResponse = doneData.assistant_message?.content || doneData.response || '';
           console.log("Selected chat language:", selectedLanguage);
           console.log("Assistant response:", assistantResponse);
@@ -389,6 +396,8 @@ export function ChatProvider({ children }) {
               language: doneData.language,
               memory_used: doneData.memory_used,
               extracted_memories: doneData.extracted_memories,
+              sources: doneData.sources || doneData.assistant_message?.sources,
+              is_realtime: doneData.is_realtime,
             }
           ]);
 
@@ -412,6 +421,7 @@ export function ChatProvider({ children }) {
           }
         },
         onError: async (err) => {
+          setSearchingStatus(null);
           if (controller.signal.aborted) return;
           console.warn('Streaming error, falling back to non-streaming:', err);
 
@@ -441,6 +451,8 @@ export function ChatProvider({ children }) {
                   language: fallbackResponse.language,
                   memory_used: fallbackResponse.memory_used,
                   extracted_memories: fallbackResponse.extracted_memories,
+                  sources: fallbackResponse.sources || fallbackResponse.assistant_message?.sources,
+                  is_realtime: fallbackResponse.is_realtime,
                 },
               ]);
 
@@ -531,7 +543,12 @@ export function ChatProvider({ children }) {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === response.assistant_message?.id
-            ? { ...response.assistant_message, isRegenerating: false }
+            ? {
+                ...response.assistant_message,
+                sources: response.sources || response.assistant_message?.sources,
+                is_realtime: response.is_realtime,
+                isRegenerating: false,
+              }
             : m
         )
       );
@@ -605,6 +622,7 @@ export function ChatProvider({ children }) {
         stopSpeaking,
         pauseSpeaking,
         resumeSpeaking,
+        searchingStatus,
       }}
     >
       {children}

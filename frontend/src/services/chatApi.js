@@ -16,6 +16,7 @@ export const chatApi = {
     attachment_ids = null,
     language = null,
     onInit,
+    onStatus,
     onChunk,
     onDone,
     onError,
@@ -68,6 +69,8 @@ export const chatApi = {
             const data = JSON.parse(jsonStr);
             if (data.type === 'init' && onInit) {
               onInit(data);
+            } else if ((data.type === 'status' || data.stage) && onStatus) {
+              onStatus(data);
             } else if (data.type === 'chunk' && onChunk) {
               onChunk(data.chunk);
             } else if (data.type === 'done' && onDone) {

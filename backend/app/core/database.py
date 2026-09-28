@@ -52,6 +52,7 @@ def init_db() -> None:
     import app.models.memory
     import app.models.message_attachment
     import app.models.message_feedback
+    import app.models.web_search_log
 
     # Create tables for both SQLite and PostgreSQL.
     Base.metadata.create_all(bind=engine)
@@ -169,6 +170,15 @@ def init_db() -> None:
                         "ALTER TABLE messages "
                         "ADD COLUMN language VARCHAR(10) "
                         "DEFAULT 'en'"
+                    )
+
+                if (
+                    "sources" not in message_columns
+                    and "id" in message_columns
+                ):
+                    conn.exec_driver_sql(
+                        "ALTER TABLE messages "
+                        "ADD COLUMN sources TEXT"
                     )
 
                 conn.commit()

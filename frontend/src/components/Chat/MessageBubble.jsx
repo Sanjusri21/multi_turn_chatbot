@@ -16,7 +16,9 @@ import {
   Volume2,
   Square,
   Play,
-  Pause
+  Pause,
+  Globe,
+  ExternalLink
 } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { chatApi } from '../../services/chatApi';
@@ -27,6 +29,15 @@ function formatFileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function extractDomainName(url) {
+  try {
+    const u = new URL(url);
+    return u.hostname.replace(/^www\./, '');
+  } catch {
+    return 'Web Source';
+  }
 }
 
 function getFileIcon(att) {
@@ -209,7 +220,42 @@ export function MessageBubble({ message, onRegenerate, isLastAssistant, isRegene
           {isUser ? (
             <div className="user-message-text">{message.content}</div>
           ) : (
-            <MarkdownRenderer content={message.content} />
+            <>
+              {/* Real-time Sources Section (Shown above/with response for verified facts) */}
+              {message.sources && message.sources.length > 0 && (
+                <div className="zara-sources-container">
+                  <div className="zara-sources-header">
+                    <Globe size={13} className="sources-globe-icon" />
+                    <span>Searched {message.sources.length} live source{message.sources.length > 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="zara-sources-grid">
+                    {message.sources.map((src, idx) => {
+                      const domain = src.source_name || extractDomainName(src.url);
+                      return (
+                        <a
+                          key={idx}
+                          href={src.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="zara-source-card"
+                          title={`${src.title}\n${src.snippet || ''}`}
+                        >
+                          <div className="source-card-top">
+                            <span className="source-card-domain">{domain}</span>
+                            <ExternalLink size={11} className="source-external-icon" />
+                          </div>
+                          <div className="source-card-title">{src.title}</div>
+                          {src.published_at && (
+                            <div className="source-card-date">{src.published_at}</div>
+                          )}
+                        </a>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <MarkdownRenderer content={message.content} />
+            </>
           )}
 
           {/* Subtle Memory Used Indicator */}

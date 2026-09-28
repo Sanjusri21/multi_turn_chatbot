@@ -6,6 +6,7 @@ from app.repositories.memory_repository import MemoryRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.settings_repository import SettingsRepository
 from app.services.prompt_service import prompt_service
+from app.services.source_service import SourceService
 from app.utils.text_utils import format_memories_for_prompt
 from app.core.config import settings
 
@@ -144,7 +145,8 @@ class ContextService:
         conversation_id: str,
         user_id: str,
         current_user_message: str,
-        language: Optional[str] = None
+        language: Optional[str] = None,
+        retrieved_sources: Optional[List[Any]] = None
     ) -> List[Dict[str, str]]:
         """
         Assembles the complete, modular LLM prompt sequence:
@@ -207,6 +209,12 @@ class ContextService:
                 "[LANGUAGE DIRECTIVE - MANDATORY]:\n"
                 "Respond in English."
             )
+
+        # 8. Real-Time Information Sources (if current information requested)
+        if retrieved_sources:
+            sources_block = SourceService.format_sources_for_prompt(retrieved_sources)
+            if sources_block:
+                system_parts.append(sources_block)
 
         messages.append({
             "role": "system",

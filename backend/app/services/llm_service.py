@@ -397,6 +397,42 @@ class MockLLMProvider(BaseLLMProvider):
             bool(re.search(r"[\u0900-\u097F]", last_msg))
         )
 
+        # Real-time sources handling based on retrieved web sources
+        has_realtime_sources = "real-time information rule:" in sys_combined.lower() or "retrieved sources:" in sys_combined.lower()
+        if has_realtime_sources:
+            if is_tamil_directive:
+                if "stalin" in sys_combined.lower() or "முதலமைச்சர்" in last_msg or "chief minister" in lower:
+                    return "சமீபத்திய அதிகாரப்பூர்வ தகவல்களின்படி, தமிழ்நாட்டின் தற்போதைய முதலமைச்சர் திரு. மு. க. ஸ்டாலின் (M. K. Stalin) ஆவார்."
+                if "python" in lower and ("version" in lower or "பதிப்பு" in last_msg):
+                    return "சமீபத்திய வெளியீட்டு தகவல்களின்படி, பைதான் (Python) இன் தற்போதைய நிலையான பதிப்பு Python 3.13 ஆகும்."
+                return "கிடைக்கப்பெற்ற நேரலை தகவல்களின்படி உங்கள் கேள்விக்கான தற்போதைய விவரங்கள் பெறப்பட்டு சரிபார்க்கப்பட்டன."
+
+            if is_hindi_directive:
+                if "stalin" in sys_combined.lower() or "मुख्यमंत्री" in last_msg or "chief minister" in lower:
+                    return "नवीनतम आधिकारिक जानकारी के अनुसार, तमिलनाडु के वर्तमान मुख्यमंत्री एम. के. स्टालिन (M. K. Stalin) हैं।"
+                if "python" in lower and ("version" in lower or "संस्करण" in last_msg):
+                    return "नवीनतम जानकारी के अनुसार, पायथन (Python) का वर्तमान स्थिर संस्करण Python 3.13 है।"
+                return "उपलब्ध लाइव स्रोतों के अनुसार आपकी जानकारी प्राप्त कर ली गई है।"
+
+            if "stalin" in sys_combined.lower() or "chief minister" in lower or "cm of tamil nadu" in lower:
+                return "According to current authoritative sources from the Tamil Nadu Legislative Assembly and official government portals, the current Chief Minister of Tamil Nadu is M. K. Stalin."
+            if "python" in lower and ("latest" in lower or "version" in lower):
+                return "According to the latest documentation from Python.org, the latest major stable release of Python is Python 3.13."
+            if "headline" in lower or "news" in lower:
+                return "According to the latest global news reports, key developments and top international headlines have been retrieved."
+            if "weather" in lower or "temperature" in lower:
+                w_match = re.search(r"Current weather in ([^:\n]+): ([^\n]+)", sys_combined)
+                if w_match:
+                    return f"According to current real-time meteorological reports, {w_match.group(0)}"
+                return "According to current real-time meteorological reports, current weather conditions have been retrieved."
+            if "bitcoin" in lower or "crypto" in lower:
+                b_match = re.search(r"Current ([^:\n]+) price: ([^\n]+)", sys_combined)
+                if b_match:
+                    return f"According to real-time market data, {b_match.group(0)}"
+                return "According to real-time market data, current cryptocurrency price information has been retrieved."
+
+            return f"According to the latest retrieved real-time sources, current information for '{last_msg}' has been retrieved and verified."
+
         # Tamil greetings, project and general queries
         if is_tamil_directive:
             if any(w in last_msg for w in ["என்னுடைய project", "என் project", "project என்ன", "திட்டம் என்ன"]) or ("project" in lower and any(q in lower for q in ["what", "name", "called"])):

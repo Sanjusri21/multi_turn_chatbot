@@ -16,6 +16,7 @@ class Message(Base):
     role = Column(String(20), nullable=False)  # "system", "user", "assistant"
     content = Column(Text, nullable=False)
     language = Column(String(10), nullable=True, default="en")
+    sources = Column(Text, nullable=True)  # JSON-encoded array of retrieved sources
     timestamp = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships

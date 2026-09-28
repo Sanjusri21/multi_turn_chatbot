@@ -12,6 +12,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
 from app.core.database import Base
+import app.models.user
+import app.models.user_settings
+import app.models.conversation
+import app.models.message
+import app.models.memory
+import app.models.message_attachment
+import app.models.message_feedback
+import app.models.web_search_log
 from app.services.llm_service import MockLLMProvider, LLMService
 from app.services.auth_service import AuthService
 from app.schemas.auth_schema import UserSignupRequest

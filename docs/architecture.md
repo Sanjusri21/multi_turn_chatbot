@@ -1,111 +1,224 @@
-# MemoryBot — Architecture & Request Journey
+# Zara — Architecture & Real-Time Retrieval Journey
 
-MemoryBot is a production-ready, modular multi-turn conversational AI system designed to solve the limitations of stateless chatbots. It maintains context continuity across turns, dynamically extracts and persists long-term personal facts, manages token budgets via context windowing and auto-summarization, supports real-time streaming, and offers deep developer inspectability through the Memory Debugger.
+Zara (formerly MemoryBot) is a production-ready, modular multi-turn conversational AI assistant powered by Google Gemini and SQLite. Zara combines **persistent user memory** with **live real-time web retrieval**, preventing stale hallucinated answers for time-sensitive questions without requiring vector databases, embeddings, or RAG.
 
 ---
 
-## High-Level Journey: How a Message Travels Through MemoryBot
+## 1. High-Level Architecture & Request Flow
 
 ```
-User Typing Message
-        ↓
-React Frontend (Vite + React 18)
-        ↓  (HTTP POST /api/chat/stream with Bearer JWT)
+User (Web UI / Voice STT)
+       ↓
+Frontend (React 18 + Vite)
+       ↓  (HTTP POST /api/chat/stream or /api/chat with Bearer JWT)
 FastAPI Router (chat_routes.py)
-        ↓  (JWT validation & user isolation via get_current_user)
-Authentication Dependency
-        ↓
+       ↓  (User authentication & JWT validation)
 Chat Service (chat_service.py)
-        ├── 1. Saves User Message & Attachments to SQLite
-        ├── 2. Auto-titles conversation if first turn
-        ↓
-Context Service (context_service.py)
-        ├── 3. System Prompt
-        ├── 4. User Response Style Preference (Concise, Balanced, Detailed, Beginner-friendly)
-        ├── 5. Injects Long-Term Memories (from MemoryRepository)
-        ├── 6. Injects Cumulative Conversation Summary
-        ├── 7. Injects Conversation Keywords
-        ├── 8. Injects Relevant Document Content (PDF, DOCX, TXT, CSV)
-        ├── 9. Injects Recent Message History (within MAX_CONTEXT_MESSAGES)
-        └── 10. Injects Current User Turn
-        ↓
-Memory Service (memory_service.py)
-        └── Prepares fact retrieval & category mapping
-        ↓
-LLM Service (llm_service.py)
-        └── Provider Abstraction (Google Gemini 2.5 Flash / OpenAI / Mock)
-        ↓
-Streaming Execution
-        └── Yields chunks via Server-Sent Events (SSE) back to React in real time
-        ↓
-Response Persistence & Fact Extraction
-        ├── Saves complete Assistant Message to SQLite (messages table)
-        ├── Extracts new durable personal facts (name, education, tech stack, preferences)
-        ├── Upserts memories into SQLite (memories table)
-        ├── Checks if conversation requires rolling summarization
-        └── Updates conversation timestamp (updated_at)
-        ↓
-React UI
-        ├── Displays progressive stream rendering
-        ├── Renders Markdown & Syntax-highlighted code blocks with [Copy code]
-        ├── Shows subtle auto-dismissing "✨ Memory saved" status badge
-        └── Enables in-place [Regenerate] and [👍 / 👎] feedback actions
+       ↓
+Intent & Freshness Detection (intent_service.py)
+       ├── Analyzes query for temporal indicators, entity statuses, live data keywords
+       └── Determines: NORMAL_QUERY | MEMORY_QUERY | REAL_TIME_QUERY
+       ↓
+┌───────────────────────────────────────────────┐
+│           Is Current Info Required?           │
+└───────────────────────┬───────────────────────┘
+                        │
+         ┌──────────────┴──────────────┐
+         │ NO                          │ YES
+         ↓                             ↓
+Context Service               Real-Time Retrieval Layer
+(System prompt +              (SSE status: "searching")
+ User preferences +                    ↓
+ Long-term memories +         Web Search / Specialized APIs
+ Thread summary +             (DuckDuckGo / Tavily / Open-Meteo / CoinGecko)
+ Conversation history +                ↓
+ Current user query)          (SSE status: "reading_sources")
+         │                             ↓
+         │                    Source Processing & Ranking (source_service.py)
+         │                    (Authoritative domain boost, deduplication, URL check)
+         │                             ↓
+         └──────────────┬──────────────┘
+                        ↓
+                 Context Builder (context_service.py)
+                 (Injects "REAL-TIME INFORMATION RULE" & Retrieved Sources)
+                        ↓
+                 (SSE status: "generating")
+                        ↓
+                 LLM Service (llm_service.py)
+                 (Google Gemini 2.5 Flash / OpenAI / MockLLM)
+                        ↓
+                 Response Persistence & Memory Isolation
+                 (Saves message with sources JSON; does NOT store web facts in user memory)
+                        ↓
+                 React Frontend UI
+                 (Displays live sources cards + Markdown + Syntax-highlighted code + TTS)
 ```
 
 ---
 
-## Core Components
+## 2. Intent & Freshness Detection (`intent_service.py`)
 
-### 1. Frontend Layer (`frontend/src/`)
-- **Pages**: `ChatPage`, `LoginPage`, `SignupPage`.
-- **Chat Window**:
-  - `ChatWindow.jsx`: Renders message stream, welcome prompts, and auto-scrolling.
-  - `MessageBubble.jsx`: Renders user and assistant bubbles with Markdown, attachments, timestamp, action bar (`Copy`, `Regenerate`, `👍`, `👎`), and auto-dismissing `✨ Memory saved` notification chip.
-  - `MarkdownRenderer.jsx`: Powered by `react-markdown` with custom components for headers, tables, blockquotes, links, and code blocks with language headers and dedicated `Copy code` buttons.
-  - `MessageInput.jsx`: Comprehensive input dock supporting text input, attachments (`.pdf`, `.docx`, `.txt`, `.csv`, `.png`, `.jpg`), drag-and-drop, image paste (`Ctrl+V`), microphone voice-to-text, and generation controls (`Send` vs `Stop generating`).
-- **Sidebar**:
-  - `Sidebar.jsx` & `ConversationList.jsx`: Temporal grouping into **Today**, **Yesterday**, **Previous 7 days**, and **Older**. Real-time debounced search queries titles, summaries, keywords, and message contents. Supports inline thread title renaming and deletion.
-- **Memory Drawer (`MemoryPanel.jsx`)**:
-  - Organizes memories into clean categories:
-    - 👤 Personal (name, location, identity)
-    - 🎓 Education (field of study, degree)
-    - 💻 Technologies (languages, frameworks)
-    - 🚀 Projects (apps, repositories)
-    - 🎯 Goals (learning & career objectives)
-    - ⭐ Preferences (likes/dislikes)
-    - 📋 Other
-  - Supports Add, Edit, Delete, and "Forget All".
-- **Settings Modal (`SettingsModal.jsx`)**:
-  - General Settings: Response style configuration (Concise, Balanced, Detailed, Beginner-friendly).
-  - Appearance Settings: Theme toggling (Dark, Light, System) and animation speed controls.
-  - Memory Settings: Global memory toggle, auto-save memory toggle, and memory clear.
-  - Memory Debugger: Real-time inspection of LLM provider, model, context usage, system prompt, long-term memory, conversation summary, keywords, and full compiled final context.
-  - Account Settings: Password update and account deletion.
+Zara strictly differentiates between questions requiring **pretrained reasoning**, **long-term personal memory**, and **live real-time verification**:
+
+1. **Temporal & Freshness Markers**:
+   - English: `current`, `currently`, `today`, `tonight`, `now`, `latest`, `recent`, `recently`, `this week`, `this month`, `this year`, `live`, `real-time`, `as of today`, `who is the current...`, `what is happening...`, `latest news`, `current price`, `current status`.
+   - Tamil: `தற்போதைய`, `இன்றைய`, `சமீபத்திய`, `இப்போது`, `இப்பொழுது`, `நடப்பு`, `புதிய`.
+   - Hindi: `वर्तमान`, `आज`, `हाल ही में`, `अभी`, `ताज़ा`, `लेटेस्ट`, `नवीनतम`.
+2. **Semantic Real-Time Intent**:
+   - Officeholders & Political Leaders: e.g., *"Who is the current Chief Minister of Tamil Nadu?"*
+   - Live Weather: e.g., *"What is the weather today in Coimbatore?"*
+   - Market Prices: e.g., *"Current Bitcoin price"*, *"Apple stock price"*.
+   - Sports & Live Events: e.g., *"What happened in today's IPL match?"*
+   - Software & Tech Releases: e.g., *"What is the latest version of Python?"*
+3. **Non-Real-Time Queries (Zero Search Overhead)**:
+   - General knowledge: *"What is Python?"*, *"Explain CNN"*.
+   - Conversation & Personal Memory: *"What did I tell you about my project?"*, *"My name is Sanju"*.
 
 ---
 
-### 2. Backend Layer (`backend/app/`)
-- **`api/`**: REST controller endpoints for Auth, Chat, Streaming, Conversations, Memories, Settings, Files, and Health.
-- **`services/`**:
-  - `chat_service.py`: Orchestrates multi-turn workflows, SSE response streaming, in-place regeneration, and message feedback.
-  - `context_service.py`: Assembles modular context blocks (system prompt, user preferences, memories, summary, keywords, files, recent messages). Provides full developer inspection for the Memory Debugger.
-  - `memory_service.py`: Extracts and standardizes user facts into durable categories. Rejects general questions, greetings, and file contents.
-  - `summarization_service.py`: Automatically compresses messages exceeding the sliding window threshold into an ongoing thread summary.
-  - `llm_service.py`: Provider-agnostic engine supporting Google Gemini (`gemini-2.5-flash`), OpenAI (`gpt-4o-mini`), and zero-dependency `MockLLMProvider` for offline test suites.
-  - `file_context_service.py` & `file_service.py`: Parses documents (PDF, DOCX, TXT, CSV) and images into conversational context.
-- **`repositories/`**: Clean database access layer isolating SQLAlchemy ORM queries for `User`, `UserSettings`, `Conversation`, `Message`, `Memory`, `MessageAttachment`, and `MessageFeedback`.
-- **`models/`**: SQLAlchemy models with foreign-key constraints, cascading deletes, and indexes for fast retrieval.
+## 3. Real-Time Retrieval Layer (`web_search_service.py` & `realtime_service.py`)
+
+### Web Search Provider Abstraction
+The search subsystem decouples search engines behind a common interface:
+
+```python
+class WebSearchProvider(ABC):
+    @abstractmethod
+    async def search(self, query: str, max_results: int = 5) -> List[SearchResult]:
+        ...
+```
+
+- **DuckDuckGoProvider**: Zero-credential, high-availability async search via `httpx`.
+- **TavilySearchProvider**: Specialized AI search provider using `TAVILY_API_KEY`.
+- **SerpApiSearchProvider**: Google Search API provider using `SERPAPI_API_KEY`.
+- **MockSearchProvider**: Deterministic offline provider for automated test suites.
+
+### Specialized Real-Time Providers
+Zara prioritizes structured, authoritative endpoints over general search when appropriate:
+- **WeatherProvider**: Uses Open-Meteo free geocoding and weather API.
+- **CryptoProvider**: Uses CoinGecko simple price API.
+- **StockProvider**: Extensible stock pricing interface.
 
 ---
 
-### 3. Database Schema
+## 4. Source Processing & Authoritative Priority (`source_service.py`)
+
+Retrieved sources are sanitized and evaluated before reaching the LLM:
+1. **Deduplication**: Removes duplicate URLs, titles, and empty snippets.
+2. **Authoritative Domain Ranking**:
+   - Government & Official: `.gov`, `.gov.in`, `nic.in`, `assembly.tn.gov.in`, `sansad.in`.
+   - Technology: `docs.python.org`, `python.org`, `github.com`, `kernel.org`, `w3.org`.
+   - Reputable News: `reuters.com`, `apnews.com`, `bbc.com`, `thehindu.com`.
+3. **Prompt Framing**: Formats sources into a bounded markdown block with clear index numbers, titles, and snippets.
+4. **Citation Extraction**: Generates markdown citations with validated URLs.
+
+---
+
+## 5. Context Integration & "Do Not Trust Outdated Knowledge"
+
+When real-time sources are retrieved, `ContextService` injects the **Real-Time Information Rule** into Gemini's system instructions:
+
+```
+REAL-TIME INFORMATION RULE:
+The following information was retrieved from current web sources.
+Use the retrieved sources when answering the user's current-information question.
+Do not claim that you know something from your internal knowledge when the answer is based on retrieved sources.
+Do not invent facts that are not supported by the retrieved information.
+If the sources disagree:
+- identify the disagreement
+- prefer authoritative and recent sources
+- do not silently combine conflicting claims.
+If the retrieved information is insufficient:
+say that the available sources do not provide enough information.
+```
+
+---
+
+## 6. Memory Isolation
+
+Zara strictly preserves the boundary between user memory and web facts:
+- **Long-Term Memory**: Stores only durable user attributes (*"User works as a software engineer"*, *"User's name is Sanju"*).
+- **Web Search Results**: Stored only in message metadata (`messages.sources` column and `web_search_logs` table) for rendering citations. Web facts are **never** upserted into the `memories` table.
+
+---
+
+## 7. Streaming Flow (Server-Sent Events)
+
+The SSE streaming endpoint (`POST /api/chat/stream`) emits lifecycle status events to keep the user informed during real-time queries:
+
+```
+event: status
+data: {"stage":"searching","message":"🔎 Searching the web..."}
+
+event: status
+data: {"stage":"reading_sources","message":"📚 Reading current sources..."}
+
+event: status
+data: {"stage":"generating","message":"✦ Generating answer..."}
+
+event: chunk
+data: {"text":"According to the Tamil Nadu Legislative Assembly..."}
+
+event: done
+data: {"message_id":"...","conversation_id":"...","sources":[...]}
+```
+
+For non-real-time queries, Zara emits:
+```
+event: status
+data: {"stage":"thinking","message":"✦ Thinking..."}
+```
+
+---
+
+## 8. Multilingual Architecture (English, Tamil, Hindi)
+
+Zara provides native multilingual support across the entire real-time pipeline:
+1. **Query Intent Detection**: Detects temporal tokens in English, Tamil, and Hindi.
+2. **Retrieval**: Searches using language-aware keywords.
+3. **Response Generation**:
+   - English: Direct synthesis with citations.
+   - Tamil: Natural Tamil script synthesis directly from Gemini without intermediate English translation.
+   - Hindi: Natural Devanagari script synthesis directly from Gemini.
+4. **Voice Matching (STT/TTS)**:
+   - English: `en-IN`
+   - Tamil: `ta-IN`
+   - Hindi: `hi-IN`
+   - Strict matching ensures no silent fallback to English voices.
+
+---
+
+## 9. Error Handling & Graceful Fallback
+
+- **Search Provider Unavailable / Network Timeout**:
+  Zara catches search errors safely, logs a sanitized warning, and returns an honest disclaimer:
+  > *"I couldn't retrieve current web information right now, so I don't want to give you an outdated answer."*
+  Zara **never** falls back to potentially stale pretrained knowledge to guess current facts.
+- **Empty Search Results**:
+  Zara states clearly that no reliable current sources were found rather than hallucinating details.
+- **LLM Rate Limits / API Failures**:
+  Handled with friendly error notifications in the UI without crashing the chat session.
+
+---
+
+## 10. Security & Secrets Management
+
+1. **Zero Secret Exposure**: Search API keys and Gemini API keys are loaded exclusively on the backend via `backend/app/core/config.py`.
+2. **Git Hygiene**: `backend/.env` is ignored by `.gitignore`. `backend/.env.example` contains only empty placeholders.
+3. **Log Sanitization**: Search queries and result counts are safely logged (`[Search] query="..." results=5`), while secret tokens are strictly masked.
+4. **URL Validation**: Frontend only renders clickable links for URLs adhering to valid `http://` or `https://` protocols.
+
+---
+
+## 11. Database Schema
 
 | Table | Primary Key | Key Columns | Purpose |
 |---|---|---|---|
 | `users` | `id` (UUID) | `name`, `email`, `hashed_password` | User identity & authentication |
-| `user_settings` | `id` (UUID) | `user_id`, `response_style`, `theme`, `memory_enabled` | ChatGPT-style customizations |
+| `user_settings` | `id` (UUID) | `user_id`, `response_style`, `theme`, `memory_enabled` | User personalization |
 | `conversations` | `id` (UUID) | `user_id`, `title`, `summary`, `keywords`, `updated_at` | Multi-turn chat threads |
-| `messages` | `id` (UUID) | `conversation_id`, `role`, `content`, `timestamp` | User & Assistant messages |
+| `messages` | `id` (UUID) | `conversation_id`, `role`, `content`, `sources`, `timestamp` | User & Assistant messages |
+| `web_search_logs` | `id` (UUID) | `user_id`, `conversation_id`, `query`, `provider`, `result_count`, `searched_at` | Lightweight search audit log |
 | `message_attachments` | `id` (UUID) | `message_id`, `filename`, `file_path`, `content_type` | Uploaded document & image metadata |
 | `memories` | `id` (UUID) | `user_id`, `key`, `value`, `category`, `conversation_id` | Durable persistent user facts |
 | `message_feedback` | `id` (UUID) | `message_id`, `user_id`, `conversation_id`, `feedback` | User 👍 / 👎 ratings |
