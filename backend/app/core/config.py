@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = Field(
         default=f"sqlite:///{DATA_DIR / 'memorybot.db'}"
     )
-
+    DEMO_USER_ENABLED: bool = True
     @property
     def RESOLVED_DB_PATH(self) -> Path:
         if self.DATABASE_URL.startswith("sqlite:///"):

@@ -4,8 +4,10 @@ from sqlalchemy import Column, String, DateTime
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
+
 def utc_now():
     return datetime.now(timezone.utc)
+
 
 class User(Base):
     __tablename__ = "users"
@@ -18,6 +20,22 @@ class User(Base):
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Relationships
-    conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan", order_by="Conversation.updated_at.desc()")
-    memories = relationship("Memory", back_populates="user", cascade="all, delete-orphan", order_by="Memory.category.asc()")
-    settings = relationship("UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    conversations = relationship(
+        "Conversation",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
+    memories = relationship(
+        "Memory",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="Memory.category.asc()"
+    )
+
+    settings = relationship(
+        "UserSettings",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
