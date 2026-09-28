@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-flash"
     OPENAI_MODEL: str = "gpt-4o-mini"
 
+    # xAI / Grok Fallback LLM Settings
+    XAI_API_KEY: str = Field(default="")
+    XAI_MODEL: str = Field(default="grok-4.1-fast")
+    XAI_BASE_URL: str = Field(default="https://api.x.ai/v1")
+
     # Real-Time Web Search & APIs
     WEB_SEARCH_PROVIDER: str = Field(default="duckduckgo")
     WEB_SEARCH_API_KEY: str = Field(default="")

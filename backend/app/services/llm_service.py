@@ -2,7 +2,7 @@ import os
 import json
 import re
 import time
-from typing import List, Dict, Any, Optional, Iterator
+from typing import List, Dict, Any, Optional, Iterator, Callable
 from abc import ABC, abstractmethod
 from app.core.config import settings
 from app.core.logging_config import logger
@@ -14,6 +14,14 @@ class ConfigurationError(RuntimeError):
 
 class LLMProviderError(RuntimeError):
     """Raised when an external LLM API service cannot be reached or fails."""
+    pass
+
+class LLMQuotaExhaustedError(LLMProviderError):
+    """Raised when the LLM provider API quota or rate limit is exhausted (e.g. HTTP 429 RESOURCE_EXHAUSTED)."""
+    pass
+
+class LLMServiceUnavailableError(LLMProviderError):
+    """Raised when the external LLM service is temporarily unavailable or overloaded (e.g. HTTP 503)."""
     pass
 
 class BaseLLMProvider(ABC):
@@ -41,11 +49,256 @@ class GeminiLLMProvider(BaseLLMProvider):
         self.model_name = model_name
 
     def _get_candidates(self) -> List[str]:
+        """
+        Returns the ordered list of model candidates to try.
+        The configured model is always primary. Alternate models are ONLY tried for
+        model-not-found / deprecation errors (HTTP 404), NEVER for quota exhaustion.
+        """
         candidates = [self.model_name]
         for alt in ["gemini-2.5-flash-lite", "gemini-flash-latest"]:
             if alt not in candidates:
                 candidates.append(alt)
         return candidates
+
+    @staticmethod
+    def _is_quota_error(error: Exception) -> bool:
+        """
+        Detects whether an error represents rate limiting or quota exhaustion (HTTP 429 / RESOURCE_EXHAUSTED).
+        Quota exhaustion is project-level/account-level and should NEVER be retried or passed to other Gemini models.
+        """
+        code = getattr(error, "code", None) or getattr(error, "status_code", None)
+        if code == 429:
+            return True
+        err_str = str(error).lower()
+        quota_indicators = [
+            "429",
+            "resource_exhausted",
+            "generaterequestsperday",
+            "quota exceeded",
+            "quota_exceeded",
+            "freetier",
+            "free_tier",
+            "daily quota",
+            "rate limit",
+            "ratelimit",
+            "quotavalue",
+            "exhausted"
+        ]
+        return any(ind in err_str for ind in quota_indicators)
+
+    @staticmethod
+    def _is_transient_error(error: Exception) -> bool:
+        """
+        Detects whether an error represents a temporary service spike (e.g. HTTP 503 / 502 / high demand).
+        Controlled retries (max 1) are appropriate for these transient issues.
+        """
+        code = getattr(error, "code", None) or getattr(error, "status_code", None)
+        if code in (503, 502, 504):
+            return True
+        err_str = str(error).lower()
+        transient_indicators = [
+            "503",
+            "service unavailable",
+            "unavailable",
+            "high demand",
+            "temporarily overloaded",
+            "server is overloaded",
+            "overloaded",
+            "deadline_exceeded",
+            "504 gateway timeout",
+            "transient"
+        ]
+        return any(ind in err_str for ind in transient_indicators)
+
+    @staticmethod
+    def _is_auth_error(error: Exception) -> bool:
+        """
+        Detects authentication or API key failures (HTTP 401 / 403 / API_KEY_INVALID).
+        """
+        code = getattr(error, "code", None) or getattr(error, "status_code", None)
+        if code in (401, 403):
+            return True
+        err_str = str(error).lower()
+        auth_indicators = [
+            "api_key_invalid",
+            "invalid api key",
+            "api key not valid",
+            "permission_denied",
+            "unauthenticated",
+            "forbidden"
+        ]
+        return any(ind in err_str for ind in auth_indicators)
+
+    @staticmethod
+    def _is_model_not_found_error(error: Exception) -> bool:
+        """
+        Detects model not found / unsupported errors (HTTP 404).
+        """
+        code = getattr(error, "code", None) or getattr(error, "status_code", None)
+        if code == 404:
+            return True
+        err_str = str(error).lower()
+        return "404" in err_str or "not found" in err_str or "is not supported" in err_str
+
+    def _call_generate(
+        self,
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        images: Optional[List[Dict[str, Any]]] = None
+    ) -> str:
+        # 1. Primary: Use modern official google-genai SDK
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=self.api_key)
+            contents = []
+            system_instruction = None
+
+            total_msgs = len(messages)
+            for i, msg in enumerate(messages):
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "system":
+                    system_instruction = content
+                elif role == "assistant":
+                    contents.append(types.Content(role="model", parts=[types.Part.from_text(text=content)]))
+                else:
+                    parts = []
+                    if i == total_msgs - 1 and images:
+                        for img in images:
+                            parts.append(types.Part.from_bytes(data=img["bytes"], mime_type=img.get("mime_type", "image/jpeg")))
+                    parts.append(types.Part.from_text(text=content))
+                    contents.append(types.Content(role="user", parts=parts))
+
+            config = types.GenerateContentConfig(
+                temperature=temperature,
+                system_instruction=system_instruction
+            )
+
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config
+            )
+            return response.text or ""
+
+        except ImportError:
+            # 2. Fallback: Use google.generativeai if google-genai is unavailable
+            import google.generativeai as genai
+            from PIL import Image
+            import io
+
+            genai.configure(api_key=self.api_key)
+            system_instruction = None
+            contents = []
+
+            total_msgs = len(messages)
+            for i, msg in enumerate(messages):
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "system":
+                    system_instruction = content
+                elif role == "assistant":
+                    contents.append({"role": "model", "parts": [content]})
+                else:
+                    part_items = []
+                    if i == total_msgs - 1 and images:
+                        for img in images:
+                            part_items.append(Image.open(io.BytesIO(img["bytes"])))
+                    part_items.append(content)
+                    contents.append({"role": "user", "parts": part_items})
+
+            gen_model = genai.GenerativeModel(
+                model,
+                system_instruction=system_instruction
+            ) if system_instruction else genai.GenerativeModel(model)
+
+            gen_config = genai.types.GenerationConfig(temperature=temperature)
+            response = gen_model.generate_content(contents, generation_config=gen_config)
+            return response.text or ""
+
+    def _call_generate_stream(
+        self,
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        images: Optional[List[Dict[str, Any]]] = None
+    ) -> Iterator[str]:
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=self.api_key)
+            contents = []
+            system_instruction = None
+
+            total_msgs = len(messages)
+            for i, msg in enumerate(messages):
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "system":
+                    system_instruction = content
+                elif role == "assistant":
+                    contents.append(types.Content(role="model", parts=[types.Part.from_text(text=content)]))
+                else:
+                    parts = []
+                    if i == total_msgs - 1 and images:
+                        for img in images:
+                            parts.append(types.Part.from_bytes(data=img["bytes"], mime_type=img.get("mime_type", "image/jpeg")))
+                    parts.append(types.Part.from_text(text=content))
+                    contents.append(types.Content(role="user", parts=parts))
+
+            config = types.GenerateContentConfig(
+                temperature=temperature,
+                system_instruction=system_instruction
+            )
+
+            response = client.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=config
+            )
+            for chunk in response:
+                if chunk.text:
+                    yield chunk.text
+
+        except ImportError:
+            import google.generativeai as genai
+            from PIL import Image
+            import io
+
+            genai.configure(api_key=self.api_key)
+            system_instruction = None
+            contents = []
+
+            total_msgs = len(messages)
+            for i, msg in enumerate(messages):
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "system":
+                    system_instruction = content
+                elif role == "assistant":
+                    contents.append({"role": "model", "parts": [content]})
+                else:
+                    part_items = []
+                    if i == total_msgs - 1 and images:
+                        for img in images:
+                            part_items.append(Image.open(io.BytesIO(img["bytes"])))
+                    part_items.append(content)
+                    contents.append({"role": "user", "parts": part_items})
+
+            gen_model = genai.GenerativeModel(
+                model,
+                system_instruction=system_instruction
+            ) if system_instruction else genai.GenerativeModel(model)
+
+            gen_config = genai.types.GenerationConfig(temperature=temperature)
+            response = gen_model.generate_content(contents, generation_config=gen_config, stream=True)
+            for chunk in response:
+                if chunk.text:
+                    yield chunk.text
 
     def generate(
         self,
@@ -53,99 +306,64 @@ class GeminiLLMProvider(BaseLLMProvider):
         temperature: float = 0.7,
         images: Optional[List[Dict[str, Any]]] = None
     ) -> str:
+        candidates = self._get_candidates()
         last_error = None
-        for model_candidate in self._get_candidates():
+
+        for model_idx, model_candidate in enumerate(candidates):
             for attempt in range(2):
                 try:
-                    # 1. Primary: Use modern official google-genai SDK
-                    try:
-                        from google import genai
-                        from google.genai import types
-
-                        client = genai.Client(api_key=self.api_key)
-                        contents = []
-                        system_instruction = None
-
-                        total_msgs = len(messages)
-                        for i, msg in enumerate(messages):
-                            role = msg.get("role", "user")
-                            content = msg.get("content", "")
-                            if role == "system":
-                                system_instruction = content
-                            elif role == "assistant":
-                                contents.append(types.Content(role="model", parts=[types.Part.from_text(text=content)]))
-                            else:
-                                parts = []
-                                if i == total_msgs - 1 and images:
-                                    for img in images:
-                                        parts.append(types.Part.from_bytes(data=img["bytes"], mime_type=img.get("mime_type", "image/jpeg")))
-                                parts.append(types.Part.from_text(text=content))
-                                contents.append(types.Content(role="user", parts=parts))
-
-                        config = types.GenerateContentConfig(
-                            temperature=temperature,
-                            system_instruction=system_instruction
-                        )
-
-                        response = client.models.generate_content(
-                            model=model_candidate,
-                            contents=contents,
-                            config=config
-                        )
-                        return response.text or ""
-
-                    except ImportError:
-                        # 2. Fallback: Use google.generativeai if google-genai is unavailable
-                        import google.generativeai as genai
-                        from PIL import Image
-                        import io
-
-                        genai.configure(api_key=self.api_key)
-                        system_instruction = None
-                        contents = []
-
-                        total_msgs = len(messages)
-                        for i, msg in enumerate(messages):
-                            role = msg.get("role", "user")
-                            content = msg.get("content", "")
-                            if role == "system":
-                                system_instruction = content
-                            elif role == "assistant":
-                                contents.append({"role": "model", "parts": [content]})
-                            else:
-                                part_items = []
-                                if i == total_msgs - 1 and images:
-                                    for img in images:
-                                        part_items.append(Image.open(io.BytesIO(img["bytes"])))
-                                part_items.append(content)
-                                contents.append({"role": "user", "parts": part_items})
-
-                        model = genai.GenerativeModel(
-                            model_candidate,
-                            system_instruction=system_instruction
-                        ) if system_instruction else genai.GenerativeModel(model_candidate)
-
-                        gen_config = genai.types.GenerationConfig(temperature=temperature)
-                        response = model.generate_content(contents, generation_config=gen_config)
-                        return response.text or ""
-
+                    return self._call_generate(
+                        model=model_candidate,
+                        messages=messages,
+                        temperature=temperature,
+                        images=images
+                    )
                 except Exception as e:
                     last_error = e
-                    err_str = str(e).lower()
-                    is_transient = "503" in err_str or "unavailable" in err_str or "high demand" in err_str or "429" in err_str or "resource_exhausted" in err_str
-                    if is_transient and attempt == 0:
-                        logger.warning(f"Gemini {model_candidate} transient demand spike (attempt {attempt+1}): {e}. Backing off 1.5s...")
-                        time.sleep(1.5)
-                        continue
-                    elif is_transient:
-                        logger.warning(f"Gemini {model_candidate} unavailable, trying fallback candidate...")
+
+                    # 1. Quota exhaustion: NEVER retry, NEVER switch models
+                    if self._is_quota_error(e):
+                        logger.error(
+                            f"Gemini API quota exhausted (HTTP 429) on model '{model_candidate}': {e}. "
+                            f"Aborting immediately without retry or model switching."
+                        )
+                        raise LLMQuotaExhaustedError(
+                            "Zara is temporarily unavailable because the Gemini API quota has been exhausted. Please try again after the quota resets."
+                        )
+
+                    # 2. Authentication failure: do not retry
+                    if self._is_auth_error(e):
+                        logger.error(f"Gemini API authentication failed on model '{model_candidate}': {e}")
+                        raise ConfigurationError("Gemini API authentication failed. Please check your GEMINI_API_KEY.")
+
+                    # 3. Transient service issue (503 / high demand): max 1 retry with backoff
+                    if self._is_transient_error(e):
+                        if attempt == 0:
+                            logger.warning(
+                                f"Gemini model '{model_candidate}' transient demand spike (attempt 1): {e}. "
+                                f"Backing off 1.5s before 1 retry..."
+                            )
+                            time.sleep(1.5)
+                            continue
+                        logger.warning(
+                            f"Gemini model '{model_candidate}' service unavailable after retry (attempt 2): {e}"
+                        )
                         break
-                    else:
-                        logger.error(f"Gemini API failure on {model_candidate}: {e}")
-                        raise LLMProviderError("Sorry, I couldn't reach the AI service. Please try again.")
+
+                    # 4. Model not found / unsupported (404): try next candidate
+                    if self._is_model_not_found_error(e):
+                        logger.warning(f"Gemini model '{model_candidate}' not found (404), checking alternate candidate...")
+                        break
+
+                    # 5. Other unrecoverable error
+                    logger.error(f"Gemini API failure on model '{model_candidate}': {e}")
+                    raise LLMProviderError("Zara couldn't reach the AI service. Please check your connection or try again.")
+
+        if last_error and self._is_transient_error(last_error):
+            raise LLMServiceUnavailableError("Zara is temporarily unavailable due to high demand on the AI service. Please try again in a moment.")
 
         logger.error(f"All Gemini candidates failed. Last error: {last_error}")
-        raise LLMProviderError("Sorry, I couldn't reach the AI service. Please try again.")
+        raise LLMProviderError("Zara couldn't reach the AI service. Please check your connection or try again.")
 
     def generate_stream(
         self,
@@ -153,102 +371,77 @@ class GeminiLLMProvider(BaseLLMProvider):
         temperature: float = 0.7,
         images: Optional[List[Dict[str, Any]]] = None
     ) -> Iterator[str]:
+        candidates = self._get_candidates()
         last_error = None
-        for model_candidate in self._get_candidates():
+
+        for model_idx, model_candidate in enumerate(candidates):
             for attempt in range(2):
+                has_yielded = False
                 try:
-                    try:
-                        from google import genai
-                        from google.genai import types
-
-                        client = genai.Client(api_key=self.api_key)
-                        contents = []
-                        system_instruction = None
-
-                        total_msgs = len(messages)
-                        for i, msg in enumerate(messages):
-                            role = msg.get("role", "user")
-                            content = msg.get("content", "")
-                            if role == "system":
-                                system_instruction = content
-                            elif role == "assistant":
-                                contents.append(types.Content(role="model", parts=[types.Part.from_text(text=content)]))
-                            else:
-                                parts = []
-                                if i == total_msgs - 1 and images:
-                                    for img in images:
-                                        parts.append(types.Part.from_bytes(data=img["bytes"], mime_type=img.get("mime_type", "image/jpeg")))
-                                parts.append(types.Part.from_text(text=content))
-                                contents.append(types.Content(role="user", parts=parts))
-
-                        config = types.GenerateContentConfig(
-                            temperature=temperature,
-                            system_instruction=system_instruction
-                        )
-
-                        response = client.models.generate_content_stream(
-                            model=model_candidate,
-                            contents=contents,
-                            config=config
-                        )
-                        for chunk in response:
-                            if chunk.text:
-                                yield chunk.text
-                        return
-
-                    except ImportError:
-                        import google.generativeai as genai
-                        from PIL import Image
-                        import io
-
-                        genai.configure(api_key=self.api_key)
-                        system_instruction = None
-                        contents = []
-
-                        total_msgs = len(messages)
-                        for i, msg in enumerate(messages):
-                            role = msg.get("role", "user")
-                            content = msg.get("content", "")
-                            if role == "system":
-                                system_instruction = content
-                            elif role == "assistant":
-                                contents.append({"role": "model", "parts": [content]})
-                            else:
-                                part_items = []
-                                if i == total_msgs - 1 and images:
-                                    for img in images:
-                                        part_items.append(Image.open(io.BytesIO(img["bytes"])))
-                                part_items.append(content)
-                                contents.append({"role": "user", "parts": part_items})
-
-                        model = genai.GenerativeModel(
-                            model_candidate,
-                            system_instruction=system_instruction
-                        ) if system_instruction else genai.GenerativeModel(model_candidate)
-
-                        gen_config = genai.types.GenerationConfig(temperature=temperature)
-                        response = model.generate_content(contents, generation_config=gen_config, stream=True)
-                        for chunk in response:
-                            if chunk.text:
-                                yield chunk.text
-                        return
+                    for chunk in self._call_generate_stream(
+                        model=model_candidate,
+                        messages=messages,
+                        temperature=temperature,
+                        images=images
+                    ):
+                        has_yielded = True
+                        yield chunk
+                    return
 
                 except Exception as e:
                     last_error = e
-                    err_str = str(e).lower()
-                    is_transient = "503" in err_str or "unavailable" in err_str or "high demand" in err_str or "429" in err_str or "resource_exhausted" in err_str
-                    if is_transient and attempt == 0:
-                        logger.warning(f"Gemini stream {model_candidate} demand spike. Backing off 1.5s...")
-                        time.sleep(1.5)
-                        continue
-                    elif is_transient:
+
+                    # 1. Quota exhaustion: NEVER retry, NEVER switch models
+                    if self._is_quota_error(e):
+                        logger.error(
+                            f"Gemini stream API quota exhausted (HTTP 429) on model '{model_candidate}': {e}. "
+                            f"Aborting stream immediately without retry or model switching."
+                        )
+                        raise LLMQuotaExhaustedError(
+                            "Zara is temporarily unavailable because the Gemini API quota has been exhausted. Please try again after the quota resets."
+                        )
+
+                    # 2. Authentication failure: do not retry
+                    if self._is_auth_error(e):
+                        logger.error(f"Gemini stream authentication failed on model '{model_candidate}': {e}")
+                        raise ConfigurationError("Gemini API authentication failed. Please check your GEMINI_API_KEY.")
+
+                    # If chunks were already emitted to client, retrying would emit duplicate content. Raise immediately.
+                    if has_yielded:
+                        logger.error(f"Gemini stream interrupted mid-generation on model '{model_candidate}': {e}")
+                        if self._is_transient_error(e):
+                            raise LLMServiceUnavailableError("Zara is temporarily unavailable due to high demand on the AI service. Please try again in a moment.")
+                        raise LLMProviderError("The AI response stream was interrupted. Please try again.")
+
+                    # 3. Transient service issue (503 / high demand): max 1 retry with backoff
+                    if self._is_transient_error(e):
+                        if attempt == 0:
+                            logger.warning(
+                                f"Gemini stream model '{model_candidate}' demand spike (attempt 1): {e}. "
+                                f"Backing off 1.5s before 1 retry..."
+                            )
+                            time.sleep(1.5)
+                            continue
+                        logger.warning(
+                            f"Gemini stream model '{model_candidate}' unavailable after retry: {e}"
+                        )
                         break
-                    else:
-                        logger.error(f"Gemini streaming failure on {model_candidate}: {e}")
-                        raise LLMProviderError("Sorry, I couldn't reach the AI service. Please try again.")
+
+                    # 4. Model not found (404): try next candidate
+                    if self._is_model_not_found_error(e):
+                        logger.warning(f"Gemini stream model '{model_candidate}' not found (404), checking alternate candidate...")
+                        break
+
+                    # 5. Other unrecoverable error
+                    logger.error(f"Gemini streaming failure on model '{model_candidate}': {e}")
+                    raise LLMProviderError("Zara couldn't reach the AI service. Please check your connection or try again.")
+
+        if last_error and self._is_transient_error(last_error):
+            raise LLMServiceUnavailableError("Zara is temporarily unavailable due to high demand on the AI service. Please try again in a moment.")
 
         logger.error(f"All Gemini stream candidates failed. Last error: {last_error}")
-        raise LLMProviderError("Sorry, I couldn't reach the AI service. Please try again.")
+        raise LLMProviderError("Zara couldn't reach the AI service. Please try again.")
+
 
 class OpenAILLMProvider(BaseLLMProvider):
     def __init__(self, api_key: str, model_name: str = "gpt-4o-mini"):
@@ -586,8 +779,41 @@ class LLMService:
                 logger.error("GEMINI_API_KEY is not configured in backend/.env")
                 raise ConfigurationError("Gemini API is not configured. Please add GEMINI_API_KEY to backend/.env.")
             model_name = settings.MODEL_NAME or settings.GEMINI_MODEL or "gemini-2.5-flash"
-            logger.info(f"Using Google Gemini LLM Provider (model: {model_name})")
-            return GeminiLLMProvider(api_key=settings.GEMINI_API_KEY, model_name=model_name)
+            logger.info(f"Using Google Gemini LLM Provider as primary (model: {model_name})")
+            primary_gemini = GeminiLLMProvider(api_key=settings.GEMINI_API_KEY, model_name=model_name)
+
+            # Optional xAI Grok fallback provider
+            fallback_grok = None
+            if settings.XAI_API_KEY:
+                from app.services.grok_llm_provider import GrokLLMProvider
+                grok_model = settings.XAI_MODEL or "grok-4.1-fast"
+                logger.info(f"Configuring xAI Grok as automatic fallback provider (model: {grok_model})")
+                fallback_grok = GrokLLMProvider(
+                    api_key=settings.XAI_API_KEY,
+                    model_name=grok_model,
+                    base_url=settings.XAI_BASE_URL
+                )
+
+            from app.services.llm_router import LLMRouter
+            return LLMRouter(
+                primary_provider=primary_gemini,
+                fallback_provider=fallback_grok,
+                primary_name="gemini",
+                fallback_name="grok"
+            )
+
+        elif prov in ("grok", "xai"):
+            if not settings.XAI_API_KEY:
+                logger.error("XAI_API_KEY is not configured in backend/.env")
+                raise ConfigurationError("XAI_API_KEY is missing. Please configure your XAI_API_KEY in backend/.env.")
+            from app.services.grok_llm_provider import GrokLLMProvider
+            grok_model = settings.XAI_MODEL or "grok-4.1-fast"
+            logger.info(f"Using xAI Grok LLM Provider (model: {grok_model})")
+            return GrokLLMProvider(
+                api_key=settings.XAI_API_KEY,
+                model_name=grok_model,
+                base_url=settings.XAI_BASE_URL
+            )
 
         elif prov == "openai":
             if not settings.OPENAI_API_KEY:
@@ -598,7 +824,14 @@ class LLMService:
             return OpenAILLMProvider(api_key=settings.OPENAI_API_KEY, model_name=model_name)
 
         else:
-            raise ConfigurationError(f"Unsupported LLM provider '{settings.LLM_PROVIDER}'. Supported options: 'gemini', 'openai', 'mock'.")
+            raise ConfigurationError(f"Unsupported LLM provider '{settings.LLM_PROVIDER}'. Supported options: 'gemini', 'grok', 'openai', 'mock'.")
+
+    @property
+    def last_provider_used(self) -> str:
+        """Returns the provider name that generated the last completion ('gemini' or 'grok')."""
+        if hasattr(self.provider, "last_provider_used"):
+            return self.provider.last_provider_used
+        return getattr(self.provider, "primary_name", settings.LLM_PROVIDER)
 
     def generate_response(
         self,
@@ -613,9 +846,14 @@ class LLMService:
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        images: Optional[List[Dict[str, Any]]] = None
+        images: Optional[List[Dict[str, Any]]] = None,
+        on_fallback: Optional[Callable[[str, str], None]] = None
     ) -> Iterator[str]:
-        """Streams response chunks from the active LLM provider."""
+        """Streams response chunks from the active LLM provider (or failover router)."""
+        import inspect
+        sig = inspect.signature(self.provider.generate_stream)
+        if "on_fallback" in sig.parameters:
+            return self.provider.generate_stream(messages, temperature=temperature, images=images, on_fallback=on_fallback)
         return self.provider.generate_stream(messages, temperature=temperature, images=images)
 
     def generate_summary(self, messages: List[Dict[str, str]], existing_summary: Optional[str] = None) -> str:

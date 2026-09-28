@@ -423,7 +423,29 @@ export function ChatProvider({ children }) {
         onError: async (err) => {
           setSearchingStatus(null);
           if (controller.signal.aborted) return;
-          console.warn('Streaming error, falling back to non-streaming:', err);
+          console.warn('Streaming error:', err);
+
+          const isQuota =
+            err.code === 429 ||
+            err.error_type === 'quota_exhausted' ||
+            /quota|resource_exhausted|429/i.test(err.message || '');
+
+          if (isQuota) {
+            const quotaMsg =
+              err.message ||
+              "Zara is temporarily unavailable because the Gemini API quota has been exhausted. Please try again after the quota resets.";
+            showToast(quotaMsg, 'error');
+            setMessages((prev) => [
+              ...prev.filter((m) => m.id !== streamingAssistantId),
+              {
+                id: `err-${Date.now()}`,
+                role: 'assistant',
+                content: `⚠️ ${quotaMsg}`,
+                timestamp: new Date().toISOString(),
+              }
+            ]);
+            return;
+          }
 
           // If stream failed before any chunk, fallback to standard synchronous endpoint
           if (!hasReceivedChunk) {
@@ -476,10 +498,25 @@ export function ChatProvider({ children }) {
               return;
             } catch (fallbackErr) {
               console.error('Fallback chat error:', fallbackErr);
+              const isFallbackQuota = /quota|resource_exhausted|429/i.test(fallbackErr.message || '');
+              const displayMsg = isFallbackQuota
+                ? (fallbackErr.message || "Zara is temporarily unavailable because the Gemini API quota has been exhausted. Please try again after the quota resets.")
+                : (fallbackErr.message || "Zara couldn't reach the AI service. Please check your connection or try again.");
+              showToast(displayMsg, 'error');
+              setMessages((prev) => [
+                ...prev.filter((m) => m.id !== streamingAssistantId),
+                {
+                  id: `err-${Date.now()}`,
+                  role: 'assistant',
+                  content: `⚠️ ${displayMsg}`,
+                  timestamp: new Date().toISOString(),
+                }
+              ]);
+              return;
             }
           }
 
-          const friendlyMsg = "The response stream was interrupted. Try regenerating the response.";
+          const friendlyMsg = err.message || "The response stream was interrupted. Try regenerating the response.";
           showToast(friendlyMsg, 'error');
           setMessages((prev) => [
             ...prev.filter((m) => m.id !== streamingAssistantId),
@@ -497,7 +534,10 @@ export function ChatProvider({ children }) {
         console.log('Stream aborted.');
       } else {
         console.error('Chat error:', err);
-        const errorMsg = err.message || "MemoryBot couldn't reach the AI service. Please check your connection or try again.";
+        const isQuota = /quota|resource_exhausted|429/i.test(err.message || '');
+        const errorMsg = isQuota
+          ? (err.message || "Zara is temporarily unavailable because the Gemini API quota has been exhausted. Please try again after the quota resets.")
+          : (err.message || "Zara couldn't reach the AI service. Please check your connection or try again.");
         showToast(errorMsg, 'error');
         setMessages((prev) => [
           ...prev.filter((m) => m.id !== streamingAssistantId),

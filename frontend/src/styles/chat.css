@@ -1190,6 +1190,12 @@
   background: rgba(234, 179, 8, 0.08);
 }
 
+.typing-indicator-container.status-fallback {
+  border-color: rgba(249, 115, 22, 0.4);
+  background: rgba(249, 115, 22, 0.08);
+  box-shadow: 0 0 16px rgba(249, 115, 22, 0.15);
+}
+
 .typing-status-badge {
   font-size: 0.82rem;
   font-weight: 500;

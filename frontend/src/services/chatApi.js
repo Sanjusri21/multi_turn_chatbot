@@ -71,12 +71,23 @@ export const chatApi = {
               onInit(data);
             } else if ((data.type === 'status' || data.stage) && onStatus) {
               onStatus(data);
+            } else if (data.type === 'provider_fallback') {
+              if (onStatus) {
+                onStatus({
+                  stage: 'fallback',
+                  message: 'Gemini unavailable — using backup AI...',
+                  ...data
+                });
+              }
             } else if (data.type === 'chunk' && onChunk) {
               onChunk(data.chunk);
             } else if (data.type === 'done' && onDone) {
               onDone(data);
             } else if (data.type === 'error') {
-              if (onError) onError(new Error(data.message || 'Stream interrupted.'));
+              const streamErr = new Error(data.message || 'Stream interrupted.');
+              streamErr.code = data.code;
+              streamErr.error_type = data.error_type;
+              if (onError) onError(streamErr);
               return;
             }
           } catch (e) {

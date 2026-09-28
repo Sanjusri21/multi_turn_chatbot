@@ -15,7 +15,12 @@ from app.schemas.chat_schema import (
 )
 from app.services.chat_service import ChatService
 from app.services.context_service import ContextService
-from app.services.llm_service import ConfigurationError, LLMProviderError
+from app.services.llm_service import (
+    ConfigurationError,
+    LLMProviderError,
+    LLMQuotaExhaustedError,
+    LLMServiceUnavailableError
+)
 from app.core.logging_config import logger
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -52,6 +57,18 @@ def send_chat_message(
         )
     except HTTPException:
         raise
+    except LLMQuotaExhaustedError as e:
+        logger.error(f"LLM Quota Exhausted: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(e)
+        )
+    except LLMServiceUnavailableError as e:
+        logger.error(f"LLM Service Unavailable: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e)
+        )
     except ConfigurationError as e:
         logger.error(f"LLM Configuration Error: {e}")
         raise HTTPException(
@@ -62,7 +79,7 @@ def send_chat_message(
         logger.error(f"LLM Provider Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Zara couldn't reach the AI service. Please check your connection or try again."
+            detail=str(e) or "Zara couldn't reach the AI service. Please check your connection or try again."
         )
     except Exception as e:
         logger.exception(f"Unexpected chat processing error: {e}")

@@ -67,6 +67,7 @@ class ChatResponse(BaseModel):
     robot_state: str = "HAPPY"
     sources: Optional[List[SearchSourceItem]] = None
     is_realtime: bool = False
+    provider: Optional[str] = "gemini"
 
 class RegenerateRequest(BaseModel):
     conversation_id: str = Field(..., description="ID of conversation to regenerate response in")

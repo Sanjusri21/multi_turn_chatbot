@@ -10,7 +10,13 @@ from app.services.context_service import ContextService
 from app.services.summarization_service import SummarizationService
 from app.services.file_service import FileService
 from app.services.file_context_service import FileContextService
-from app.services.llm_service import LLMService, get_llm_service
+from app.services.llm_service import (
+    LLMService,
+    get_llm_service,
+    LLMQuotaExhaustedError,
+    LLMServiceUnavailableError,
+    ConfigurationError
+)
 from app.services.intent_service import IntentService
 from app.services.web_search_service import WebSearchService
 from app.services.realtime_service import RealtimeService
@@ -285,7 +291,8 @@ class ChatService:
             extracted_memories=extracted_memories,
             robot_state=robot_state,
             sources=sources if sources else None,
-            is_realtime=is_realtime
+            is_realtime=is_realtime,
+            provider=getattr(self.llm_service, "last_provider_used", "gemini")
         )
 
     def process_chat_message_stream(
@@ -444,20 +451,55 @@ class ChatService:
             temperature = self._resolve_temperature(user_settings.response_style)
 
             full_reply_parts = []
+            fallback_events = []
+
+            def handle_fallback(from_prov: str, to_prov: str):
+                logger.warning(f"[ChatStream] Provider failover triggered from '{from_prov}' to '{to_prov}'")
+                fallback_events.append({
+                    "type": "provider_fallback",
+                    "from": from_prov,
+                    "to": to_prov,
+                    "message": "Gemini temporarily unavailable — switching to Zara's backup AI..."
+                })
+
             try:
                 stream_gen = self.llm_service.generate_response_stream(
                     llm_messages,
                     temperature=temperature,
-                    images=image_payloads if image_payloads else None
+                    images=image_payloads if image_payloads else None,
+                    on_fallback=handle_fallback
                 )
                 for chunk in stream_gen:
+                    while fallback_events:
+                        fb = fallback_events.pop(0)
+                        yield f"data: {json.dumps(fb)}\n\n"
                     if chunk:
                         full_reply_parts.append(chunk)
                         chunk_payload = {"type": "chunk", "chunk": chunk}
                         yield f"data: {json.dumps(chunk_payload)}\n\n"
+            except LLMQuotaExhaustedError as e:
+                logger.error(f"Streaming quota exhausted for user {user_id}: {e}")
+                err_payload = {
+                    "type": "error",
+                    "code": 429,
+                    "error_type": "quota_exhausted",
+                    "message": str(e)
+                }
+                yield f"data: {json.dumps(err_payload)}\n\n"
+                return
+            except LLMServiceUnavailableError as e:
+                logger.error(f"Streaming service unavailable for user {user_id}: {e}")
+                err_payload = {
+                    "type": "error",
+                    "code": 503,
+                    "error_type": "service_unavailable",
+                    "message": str(e)
+                }
+                yield f"data: {json.dumps(err_payload)}\n\n"
+                return
             except Exception as e:
                 logger.error(f"Streaming failed for user {user_id}: {e}")
-                err_payload = {"type": "error", "message": "The response stream was interrupted. Try regenerating the response."}
+                err_payload = {"type": "error", "code": 502, "message": "The response stream was interrupted. Try regenerating the response."}
                 yield f"data: {json.dumps(err_payload)}\n\n"
                 return
 
@@ -544,7 +586,8 @@ class ChatService:
             "extracted_memories": [m.model_dump() for m in extracted_memories],
             "robot_state": "SUCCESS" if extracted_memories else "HAPPY",
             "sources": [s.model_dump() for s in sources] if sources else None,
-            "is_realtime": is_realtime
+            "is_realtime": is_realtime,
+            "provider": getattr(self.llm_service, "last_provider_used", "gemini")
         }
         yield f"data: {json.dumps(done_payload)}\n\n"
 
@@ -634,6 +677,15 @@ class ChatService:
         # Generate new answer
         try:
             new_reply = self.llm_service.generate_response(llm_messages, temperature=temperature)
+        except LLMQuotaExhaustedError as e:
+            logger.error(f"Regeneration quota error for user {user_id}: {e}")
+            raise HTTPException(status_code=429, detail=str(e))
+        except LLMServiceUnavailableError as e:
+            logger.error(f"Regeneration service unavailable for user {user_id}: {e}")
+            raise HTTPException(status_code=503, detail=str(e))
+        except ConfigurationError as e:
+            logger.error(f"Regeneration configuration error for user {user_id}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
         except Exception as e:
             logger.error(f"Regeneration error for user {user_id}: {e}")
             raise HTTPException(status_code=502, detail="Zara couldn't reach the AI service. Please check your connection or try again.")
@@ -660,7 +712,8 @@ class ChatService:
             extracted_memories=[],
             robot_state="HAPPY",
             sources=sources if sources else None,
-            is_realtime=is_realtime
+            is_realtime=is_realtime,
+            provider=getattr(self.llm_service, "last_provider_used", "gemini")
         )
 
     def record_feedback(

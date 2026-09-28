@@ -40,6 +40,12 @@ export function TypingIndicator() {
           label: searchingStatus.message || '✦ Thinking...',
           badgeClass: 'status-thinking'
         };
+      case 'fallback':
+        return {
+          icon: <Sparkles size={15} className="typing-status-icon sparkles" />,
+          label: searchingStatus.message || 'Gemini unavailable — using backup AI...',
+          badgeClass: 'status-fallback'
+        };
       default:
         return {
           icon: <Sparkles size={15} className="typing-status-icon sparkles" />,
