@@ -1,0 +1,227 @@
+/* ============================================================
+   Futuristic AI-Memory Background Canvas
+   Colors: Deep Navy, Midnight Blue, Indigo, Violet, Cyan
+   Features: Ambient glow waves, SVG neural paths, glowing particles,
+             and subtle floating memory/chat icons.
+   z-index: 0, pointer-events: none, fixed viewport
+   ============================================================ */
+
+.ai-memory-bg-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 20%, #0a1329 0%, #060b17 55%, #03060d 100%);
+}
+
+/* 1. Ambient Gradient Waves & Deep Glows */
+.ai-ambient-glows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.glow-wave {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.glow-navy-deep {
+  width: 70vw;
+  height: 70vh;
+  top: -15vh;
+  left: -15vw;
+  background: radial-gradient(circle, rgba(13, 27, 62, 0.7) 0%, transparent 70%);
+  animation: floatDeepNavy 24s ease-in-out infinite alternate;
+}
+
+.glow-indigo-violet {
+  width: 60vw;
+  height: 60vh;
+  bottom: -10vh;
+  right: -10vw;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.16) 0%, rgba(139, 92, 246, 0.12) 40%, transparent 75%);
+  animation: floatIndigoViolet 28s ease-in-out infinite alternate;
+}
+
+.glow-cyan-blue {
+  width: 50vw;
+  height: 50vh;
+  top: 30vh;
+  left: 25vw;
+  background: radial-gradient(circle, rgba(0, 242, 254, 0.1) 0%, rgba(59, 130, 246, 0.08) 50%, transparent 70%);
+  animation: floatCyanBlue 20s ease-in-out infinite alternate;
+}
+
+.glow-ambient-center {
+  width: 40vw;
+  height: 40vh;
+  top: 10vh;
+  right: 15vw;
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.09) 0%, rgba(30, 27, 75, 0.4) 60%, transparent 80%);
+  animation: pulseAmbientCenter 16s ease-in-out infinite alternate;
+}
+
+@keyframes floatDeepNavy {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(4vw, 6vh) scale(1.08); }
+  100% { transform: translate(-2vw, 3vh) scale(0.96); }
+}
+
+@keyframes floatIndigoViolet {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-5vw, -4vh) scale(1.1); }
+  100% { transform: translate(3vw, -6vh) scale(0.95); }
+}
+
+@keyframes floatCyanBlue {
+  0% { transform: translate(0, 0) scale(0.95); }
+  50% { transform: translate(-3vw, 5vh) scale(1.12); }
+  100% { transform: translate(4vw, -3vh) scale(1); }
+}
+
+@keyframes pulseAmbientCenter {
+  0% { opacity: 0.6; transform: scale(0.95); }
+  50% { opacity: 0.9; transform: scale(1.08); }
+  100% { opacity: 0.7; transform: scale(1.02); }
+}
+
+/* 2. Neural Nodes & SVG Overlay */
+.ai-neural-network-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.animated-neural-path {
+  animation: pathDashDrift 40s linear infinite;
+}
+
+.animated-neural-path.path-fast {
+  animation-duration: 25s;
+}
+
+.animated-neural-path.path-slow {
+  animation-duration: 55s;
+}
+
+.animated-neural-path.path-reverse {
+  animation: pathDashDriftReverse 35s linear infinite;
+}
+
+@keyframes pathDashDrift {
+  to {
+    stroke-dashoffset: -1000;
+  }
+}
+
+@keyframes pathDashDriftReverse {
+  to {
+    stroke-dashoffset: 1000;
+  }
+}
+
+/* Synapse glowing nodes */
+.synapse-node {
+  transform-origin: center;
+}
+
+.node-pulse-1 {
+  animation: nodeGlowPulse 3s ease-in-out infinite;
+}
+
+.node-pulse-2 {
+  animation: nodeGlowPulse 4s ease-in-out infinite 1s;
+}
+
+.node-pulse-3 {
+  animation: nodeGlowPulse 3.5s ease-in-out infinite 2s;
+}
+
+@keyframes nodeGlowPulse {
+  0%, 100% { opacity: 0.5; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.4); }
+}
+
+/* 3. Glowing Memory Particles */
+.ai-particles-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.ai-memory-particle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: particleFloat infinite ease-in-out;
+}
+
+@keyframes particleFloat {
+  0%, 100% {
+    opacity: 0.25;
+    transform: translateY(0px) scale(0.9);
+  }
+  50% {
+    opacity: 0.85;
+    transform: translateY(-16px) scale(1.25);
+  }
+}
+
+/* 4. Subtle Floating AI / Memory / Chat Badges */
+.ai-floating-icons-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.ai-floating-icon-card {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(10, 19, 41, 0.45);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 242, 254, 0.15);
+  border-radius: 9999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 12px rgba(0, 242, 254, 0.08);
+  pointer-events: none;
+  animation: iconCardFloat 6s ease-in-out infinite alternate;
+  opacity: 0.65;
+  transition: opacity 0.3s ease;
+}
+
+.floating-icon-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: rgba(226, 232, 240, 0.7);
+  white-space: nowrap;
+}
+
+@keyframes iconCardFloat {
+  0% { transform: translateY(0px); }
+  100% { transform: translateY(-14px); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .ai-floating-icons-layer {
+    display: none;
+  }
+}
