@@ -358,7 +358,8 @@ class ChatService:
         self,
         user_id: str,
         conversation_id: str,
-        message_id: Optional[str] = None
+        message_id: Optional[str] = None,
+        language: Optional[str] = None
     ) -> ChatResponse:
         """
         Regenerates an assistant response:
@@ -402,11 +403,14 @@ class ChatService:
         if not user_prompt:
             raise HTTPException(status_code=400, detail="No corresponding user message found.")
 
+        effective_language = language if language in ("en", "ta", "hi") else (target_assistant_msg.language or "en")
+
         # Build context excluding the old assistant reply
         llm_messages = self.context_service.build_llm_messages(
             conversation_id=conversation_id,
             user_id=user_id,
-            current_user_message=user_prompt.content
+            current_user_message=user_prompt.content,
+            language=effective_language
         )
 
         user_settings = self.settings_repo.get_or_create(user_id)
@@ -421,6 +425,7 @@ class ChatService:
 
         # Update assistant message in DB
         target_assistant_msg.content = new_reply
+        target_assistant_msg.language = effective_language
         self.db.commit()
         self.db.refresh(target_assistant_msg)
         self.conv_service.conv_repo.touch(conversation_id, user_id=user_id)
@@ -429,6 +434,7 @@ class ChatService:
             conversation_id=conversation_id,
             user_message=MessageResponse.model_validate(user_prompt),
             assistant_message=MessageResponse.model_validate(target_assistant_msg),
+            language=effective_language,
             extracted_memories=[],
             robot_state="HAPPY"
         )

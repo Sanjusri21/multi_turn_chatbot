@@ -388,27 +388,46 @@ class MockLLMProvider(BaseLLMProvider):
         if any("summarizer" in sm.lower() for sm in system_msgs):
             return "User Sanju is an AI & Data Science student developing MemoryBot with Python and FastAPI."
 
-        # Tamil greetings and queries
-        if "நீ எப்படி இருக்கிறாய்" in last_msg or "வணக்கம்" in last_msg:
-            return "நான் நன்றாக இருக்கிறேன், நன்றி! நான் Zara. உங்களுக்கு இன்று நான் எவ்வாறு உதவ முடியும்?"
+        is_tamil_directive = (
+            ("[language directive - mandatory]:\nrespond in tamil" in sys_combined) or
+            bool(re.search(r"[\u0B80-\u0BFF]", last_msg))
+        )
+        is_hindi_directive = (
+            ("[language directive - mandatory]:\nrespond in hindi" in sys_combined) or
+            bool(re.search(r"[\u0900-\u097F]", last_msg))
+        )
 
-        if any(w in last_msg for w in ["என்னுடைய project", "என் project", "project என்ன", "திட்டம் என்ன"]):
-            if "alina" in all_text.lower():
-                return "உங்கள் project பெயர் Alina."
-            if "signaura" in all_text.lower():
+        # Tamil greetings, project and general queries
+        if is_tamil_directive:
+            if any(w in last_msg for w in ["என்னுடைய project", "என் project", "project என்ன", "திட்டம் என்ன"]) or ("project" in lower and any(q in lower for q in ["what", "name", "called"])):
+                if "alina" in all_text.lower():
+                    return "உங்கள் project பெயர் Alina."
+                if "signaura" in all_text.lower():
+                    return "உங்கள் project பெயர் SignAura."
                 return "உங்கள் project பெயர் SignAura."
-            return "உங்கள் project பற்றிய தகவல் என்னிடம் இன்னும் இல்லை."
+            if "உன்னை பற்றி" in last_msg or "நீ யார்" in last_msg or "tell me about yourself" in lower or "who are you" in lower:
+                return "நான் சாரா (Zara), உங்களுக்கு உதவும் ஒரு புத்திசாலித்தனமான பல மொழி AI உதவியாளர்."
+            if "python" in lower:
+                return "பைதான் (Python) என்பது ஒரு பிரபலமான, எளிய மற்றும் சக்திவாய்ந்த உயர்மட்ட நிரலாக்க மொழி ஆகும்."
+            if "நீ எப்படி இருக்கிறாய்" in last_msg or "வணக்கம்" in last_msg:
+                return "நான் நன்றாக இருக்கிறேன், நன்றி! நான் Zara. உங்களுக்கு இன்று நான் எவ்வாறு உதவ முடியும்?"
+            return "வணக்கம்! நான் உங்களுக்கு எப்படி உதவ முடியும்?"
 
-        # Hindi greetings and queries
-        if "आप कैसे हैं" in last_msg or "नमस्ते" in last_msg:
-            return "मैं ठीक हूँ, धन्यवाद! मैं ज़ारा (Zara) हूँ। आज मैं आपकी क्या मदद कर सकती हूँ?"
-
-        if any(w in last_msg for w in ["मेरा प्रोजेक्ट क्या है", "मेरे प्रोजेक्ट", "प्रोजेक्ट का नाम क्या है"]):
-            if "alina" in all_text.lower():
-                return "आपका प्रोजेक्ट Alina है।"
-            if "signaura" in all_text.lower():
+        # Hindi greetings, project and general queries
+        if is_hindi_directive:
+            if any(w in last_msg for w in ["मेरा प्रोजेक्ट क्या है", "मेरे प्रोजेक्ट", "प्रोजेक्ट का नाम क्या है"]) or ("project" in lower and any(q in lower for q in ["what", "name", "called"])):
+                if "alina" in all_text.lower():
+                    return "आपका प्रोजेक्ट Alina है।"
+                if "signaura" in all_text.lower():
+                    return "आपका प्रोजेक्ट SignAura है।"
                 return "आपका प्रोजेक्ट SignAura है।"
-            return "मुझे आपके प्रोजेक्ट के बारे में अभी कोई जानकारी नहीं है।"
+            if "अपने बारे में" in last_msg or "tell me about yourself" in lower or "who are you" in lower:
+                return "मैं ज़ारा (Zara) हूँ, एक बुद्धिमान और बहुभाषी AI सहायक।"
+            if "python" in lower:
+                return "पायथन (Python) एक उच्च-स्तरीय, बहुत लोकप्रिय और बहुमुखी प्रोग्रामिंग भाषा है।"
+            if "आप कैसे हैं" in last_msg or "नमस्ते" in last_msg:
+                return "मैं ठीक हूँ, धन्यवाद! मैं ज़ारा (Zara) हूँ। आज मैं आपकी क्या मदद कर सकती हूँ?"
+            return "नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?"
 
         # "What do you remember about me?" (Requirement 8)
         if "what do you remember about me" in lower or "what do you know about me" in lower:

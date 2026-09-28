@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { chatApi } from '../services/chatApi';
 import { memoryApi } from '../services/memoryApi';
 import { settingsApi } from '../services/settingsApi';
-import { ttsService } from '../services/ttsService';
+import { ttsService, speakText, stopSpeaking as stopTTS } from '../services/ttsService';
 import { useAuth } from '../hooks/useAuth';
 
 const ChatContext = createContext(null);
@@ -58,11 +58,13 @@ export function ChatProvider({ children }) {
 
   const speakMessage = useCallback((messageId, text, language = null) => {
     const langToUse = language || selectedLanguage;
-    ttsService.speak(text, langToUse, { messageId });
+    console.log("TTS input text:", text);
+    console.log("TTS selected language:", langToUse);
+    speakText(text, langToUse, { messageId });
   }, [selectedLanguage]);
 
   const stopSpeaking = useCallback(() => {
-    ttsService.stop();
+    stopTTS();
   }, []);
 
   const pauseSpeaking = useCallback(() => {
@@ -107,6 +109,13 @@ export function ChatProvider({ children }) {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
   }, []);
+
+  // Connect TTS warning handler to show user-friendly toasts when voices are missing
+  useEffect(() => {
+    ttsService.setWarningHandler((msg) => {
+      showToast(msg, 'warning');
+    });
+  }, [showToast]);
 
   const triggerRotoBotReaction = useCallback((state, bubbleText = null, returnAfterMs = 4000) => {
     setRotoBotState(state);
@@ -369,6 +378,10 @@ export function ChatProvider({ children }) {
           );
         },
         onDone: (doneData) => {
+          const assistantResponse = doneData.assistant_message?.content || doneData.response || '';
+          console.log("Selected chat language:", selectedLanguage);
+          console.log("Assistant response:", assistantResponse);
+
           setMessages((prev) => [
             ...prev.filter((m) => m.id !== streamingAssistantId),
             {
@@ -388,11 +401,13 @@ export function ChatProvider({ children }) {
           }
 
           // Zara Auto Voice output
-          if (autoVoiceEnabled && doneData.assistant_message?.content) {
-            ttsService.speak(
-              doneData.assistant_message.content,
-              doneData.language || selectedLanguage,
-              { messageId: doneData.assistant_message.id }
+          if (autoVoiceEnabled && assistantResponse) {
+            console.log("TTS input text:", assistantResponse);
+            console.log("TTS selected language:", selectedLanguage);
+            speakText(
+              assistantResponse,
+              selectedLanguage,
+              { messageId: doneData.assistant_message?.id }
             );
           }
         },
@@ -409,6 +424,10 @@ export function ChatProvider({ children }) {
                 attachment_ids: attachmentIds.length > 0 ? attachmentIds : null,
                 language: selectedLanguage,
               });
+
+              const assistantResponse = fallbackResponse.assistant_message?.content || fallbackResponse.response || '';
+              console.log("Selected chat language:", selectedLanguage);
+              console.log("Assistant response:", assistantResponse);
 
               if (!currentConversationId || currentConversationId !== fallbackResponse.conversation_id) {
                 setCurrentConversationId(fallbackResponse.conversation_id);
@@ -433,11 +452,13 @@ export function ChatProvider({ children }) {
               }
 
               // Zara Auto Voice output
-              if (autoVoiceEnabled && fallbackResponse.assistant_message?.content) {
-                ttsService.speak(
-                  fallbackResponse.assistant_message.content,
-                  fallbackResponse.language || selectedLanguage,
-                  { messageId: fallbackResponse.assistant_message.id }
+              if (autoVoiceEnabled && assistantResponse) {
+                console.log("TTS input text:", assistantResponse);
+                console.log("TTS selected language:", selectedLanguage);
+                speakText(
+                  assistantResponse,
+                  selectedLanguage,
+                  { messageId: fallbackResponse.assistant_message?.id }
                 );
               }
               return;
@@ -500,11 +521,16 @@ export function ChatProvider({ children }) {
       const response = await chatApi.regenerateResponse({
         conversation_id: currentConversationId,
         message_id: messageId,
+        language: selectedLanguage,
       });
+
+      const assistantResponse = response.assistant_message?.content || response.response || '';
+      console.log("Selected chat language:", selectedLanguage);
+      console.log("Assistant response:", assistantResponse);
 
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === response.assistant_message.id
+          m.id === response.assistant_message?.id
             ? { ...response.assistant_message, isRegenerating: false }
             : m
         )
@@ -512,6 +538,16 @@ export function ChatProvider({ children }) {
 
       loadConversations();
       showToast('Response regenerated', 'success');
+
+      if (autoVoiceEnabled && assistantResponse) {
+        console.log("TTS input text:", assistantResponse);
+        console.log("TTS selected language:", selectedLanguage);
+        speakText(
+          assistantResponse,
+          selectedLanguage,
+          { messageId: response.assistant_message?.id }
+        );
+      }
     } catch (err) {
       console.error('Failed to regenerate response:', err);
       showToast(err.message || 'Failed to regenerate response', 'error');

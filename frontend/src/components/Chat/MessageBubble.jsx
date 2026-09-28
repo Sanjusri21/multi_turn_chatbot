@@ -63,7 +63,8 @@ export function MessageBubble({ message, onRegenerate, isLastAssistant, isRegene
     stopSpeaking,
     pauseSpeaking,
     resumeSpeaking,
-    ttsPlayingMessageId
+    ttsPlayingMessageId,
+    selectedLanguage
   } = useChatContext();
   const isPlayingSpeech = ttsPlayingMessageId === message.id;
   const [isPaused, setIsPaused] = useState(false);
@@ -269,7 +270,7 @@ export function MessageBubble({ message, onRegenerate, isLastAssistant, isRegene
                   className="msg-action-btn"
                   onClick={() => {
                     setIsPaused(false);
-                    speakMessage(message.id, message.content, message.language);
+                    speakMessage(message.id, message.content, selectedLanguage);
                   }}
                   title="Zara speak response"
                   type="button"

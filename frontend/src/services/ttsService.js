@@ -1,8 +1,31 @@
 /**
  * Zara Multilingual Voice Synthesis (TTS) Service
  * Supports English, Tamil (தமிழ்), and Hindi (हिन्दी).
- * Dynamically resolves installed device voices with graceful fallbacks.
+ * Dynamically resolves installed device voices with strict language boundary enforcement.
  */
+
+// Language mapping matching project codes and language names
+const rawLanguageMap = {
+  english: "en-IN",
+  tamil: "ta-IN",
+  hindi: "hi-IN",
+  en: "en-IN",
+  ta: "ta-IN",
+  hi: "hi-IN",
+};
+
+export const languageMap = new Proxy(rawLanguageMap, {
+  get(target, prop) {
+    if (typeof prop === 'string') {
+      const key = prop.toLowerCase().trim();
+      if (key in target) return target[key];
+      if (key.startsWith('ta')) return 'ta-IN';
+      if (key.startsWith('hi')) return 'hi-IN';
+      if (key.startsWith('en')) return 'en-IN';
+    }
+    return target[prop] || 'en-IN';
+  }
+});
 
 class TTSService {
   constructor() {
@@ -11,26 +34,55 @@ class TTSService {
     this.currentUtterance = null;
     this.activeMessageId = null;
     this._listeners = new Set();
+    this.warningHandler = null;
 
     if (this.synth) {
       this.loadVoices();
       if (this.synth.onvoiceschanged !== undefined) {
-        this.synth.onvoiceschanged = () => this.loadVoices();
+        this.synth.onvoiceschanged = () => {
+          this.loadVoices();
+        };
       }
     }
   }
 
   loadVoices() {
     if (!this.synth) return [];
-    this.voices = this.synth.getVoices() || [];
+    const list = this.synth.getVoices() || [];
+    if (list && list.length > 0) {
+      this.voices = list;
+    }
     return this.voices;
   }
 
   getVoices() {
-    if (!this.voices.length) {
+    if (!this.voices || this.voices.length === 0) {
       this.loadVoices();
     }
     return this.voices;
+  }
+
+  setWarningHandler(handler) {
+    this.warningHandler = handler;
+  }
+
+  notifyWarning(message) {
+    if (this.warningHandler) {
+      try {
+        this.warningHandler(message);
+      } catch (err) {
+        console.warn('TTS warning handler error:', err);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('tts:voice-unavailable', { detail: { message } })
+        );
+      } catch (e) {
+        // ignore
+      }
+    }
   }
 
   cleanTextForSpeech(rawText) {
@@ -49,53 +101,6 @@ class TTSService {
       .trim();
   }
 
-  findBestVoice(language = 'en') {
-    const voices = this.getVoices();
-    if (!voices || voices.length === 0) return null;
-
-    const lang = (language || 'en').toLowerCase();
-
-    if (lang === 'ta') {
-      // 1. Exact Tamil voice
-      const taVoice = voices.find(
-        (v) =>
-          v.lang.toLowerCase().replace('_', '-').startsWith('ta') ||
-          v.name.toLowerCase().includes('tamil') ||
-          v.name.includes('தமிழ்')
-      );
-      if (taVoice) return taVoice;
-    } else if (lang === 'hi') {
-      // 1. Exact Hindi voice
-      const hiVoice = voices.find(
-        (v) =>
-          v.lang.toLowerCase().replace('_', '-').startsWith('hi') ||
-          v.name.toLowerCase().includes('hindi') ||
-          v.name.includes('हिन्दी') ||
-          v.name.toLowerCase().includes('kalpana') ||
-          v.name.toLowerCase().includes('hemant')
-      );
-      if (hiVoice) return hiVoice;
-    } else {
-      // English: Prefer Zara/Zira or natural female English voices
-      const preferredZara = voices.find(
-        (v) =>
-          (v.name.toLowerCase().includes('zara') ||
-            v.name.toLowerCase().includes('zira') ||
-            v.name.toLowerCase().includes('samantha') ||
-            v.name.toLowerCase().includes('natural')) &&
-          v.lang.toLowerCase().startsWith('en')
-      );
-      if (preferredZara) return preferredZara;
-
-      const enVoice = voices.find((v) => v.lang.toLowerCase().startsWith('en'));
-      if (enVoice) return enVoice;
-    }
-
-    // Fallback: any voice matching language prefix or default voice
-    const fallback = voices.find((v) => v.lang.toLowerCase().startsWith(lang)) || voices[0];
-    return fallback || null;
-  }
-
   speak(text, language = 'en', options = {}) {
     if (!this.synth) {
       if (options.onError) {
@@ -104,25 +109,107 @@ class TTSService {
       return false;
     }
 
-    // Cancel any active speech before starting new speech
-    this.stop();
-
     const clean = this.cleanTextForSpeech(text);
     if (!clean) return false;
 
-    try {
-      const utterance = new SpeechSynthesisUtterance(clean);
-      const voice = this.findBestVoice(language);
+    const selectedLanguage = language || 'en';
 
-      if (voice) {
-        utterance.voice = voice;
-        utterance.lang = voice.lang;
-      } else {
-        const langMap = { en: 'en-US', ta: 'ta-IN', hi: 'hi-IN' };
-        utterance.lang = langMap[language] || 'en-US';
+    try {
+      // 1. Create utterance
+      const utterance = new SpeechSynthesisUtterance(clean);
+
+      // 2. Set utterance language
+      utterance.lang = languageMap[selectedLanguage];
+
+      // 3. Retrieve available voices (handling asynchronous loading)
+      let voices = this.getVoices();
+      if (!voices || voices.length === 0) {
+        voices = this.synth.getVoices() || [];
+        this.voices = voices;
       }
 
-      // Slightly tuned rate and pitch for a natural assistant voice
+      const languageCode = languageMap[selectedLanguage].toLowerCase();
+      const prefix = languageCode.split("-")[0];
+
+      // 4. Select an installed browser voice strictly matching selected language
+      let voice = null;
+      if (prefix === 'ta') {
+        // Find exact ta-IN / ta-* or voice named Tamil
+        voice = voices.find(
+          (v) => v.lang && v.lang.toLowerCase().replace('_', '-') === languageCode
+        ) || voices.find(
+          (v) => {
+            const l = v.lang ? v.lang.toLowerCase().replace('_', '-') : '';
+            return (
+              l.startsWith('ta') ||
+              (v.name && (v.name.toLowerCase().includes('tamil') || v.name.includes('தமிழ்')))
+            );
+          }
+        ) || null;
+      } else if (prefix === 'hi') {
+        // Find exact hi-IN / hi-* or voice named Hindi
+        voice = voices.find(
+          (v) => v.lang && v.lang.toLowerCase().replace('_', '-') === languageCode
+        ) || voices.find(
+          (v) => {
+            const l = v.lang ? v.lang.toLowerCase().replace('_', '-') : '';
+            return (
+              l.startsWith('hi') ||
+              (v.name && (
+                v.name.toLowerCase().includes('hindi') ||
+                v.name.includes('हिन्दी') ||
+                v.name.toLowerCase().includes('kalpana') ||
+                v.name.toLowerCase().includes('hemant')
+              ))
+            );
+          }
+        ) || null;
+      } else {
+        // English: First try en-IN, then natural/Zara, then any en-*
+        voice = voices.find(
+          (v) => v.lang && v.lang.toLowerCase().replace('_', '-') === languageCode
+        ) || voices.find(
+          (v) => (
+            v.name &&
+            (v.name.toLowerCase().includes('zara') ||
+              v.name.toLowerCase().includes('zira') ||
+              v.name.toLowerCase().includes('samantha') ||
+              v.name.toLowerCase().includes('natural')) &&
+            v.lang &&
+            v.lang.toLowerCase().startsWith('en')
+          )
+        ) || voices.find(
+          (v) => (v.lang && v.lang.toLowerCase().startsWith('en')) ||
+                 (v.name && v.name.toLowerCase().includes('english'))
+        ) || null;
+      }
+
+      // DO NOT silently use an English voice for Tamil or Hindi
+      if (voice) {
+        utterance.voice = voice;
+      } else {
+        if (prefix === 'ta') {
+          const warnMsg = "Tamil voice is not available in this browser. Please install/use a Tamil TTS voice or use Chrome/Edge with Tamil voice support.";
+          this.notifyWarning(warnMsg);
+          if (options.onVoiceUnavailable) {
+            options.onVoiceUnavailable(warnMsg);
+          }
+        } else if (prefix === 'hi') {
+          const warnMsg = "Hindi voice is not available in this browser.";
+          this.notifyWarning(warnMsg);
+          if (options.onVoiceUnavailable) {
+            options.onVoiceUnavailable(warnMsg);
+          }
+        }
+      }
+
+      // Console debugging required for verification
+      console.log("Selected language:", selectedLanguage);
+      console.log("TTS language:", utterance.lang);
+      console.log("Available voices:", voices);
+      console.log("Selected voice:", voice);
+
+      // Tuned rate and pitch for natural playback
       utterance.rate = 1.0;
       utterance.pitch = 1.05;
 
@@ -130,29 +217,30 @@ class TTSService {
       this.currentUtterance = utterance;
 
       utterance.onstart = () => {
-        this._notify({ state: 'speaking', messageId: this.activeMessageId, language });
+        this._notify({ state: 'speaking', messageId: this.activeMessageId, language: selectedLanguage });
         if (options.onStart) options.onStart();
       };
 
       utterance.onend = () => {
         this.activeMessageId = null;
         this.currentUtterance = null;
-        this._notify({ state: 'idle', messageId: null, language });
+        this._notify({ state: 'idle', messageId: null, language: selectedLanguage });
         if (options.onEnd) options.onEnd();
       };
 
       utterance.onerror = (e) => {
-        // 'interrupted' or 'canceled' are normal when stop() is called
         if (e.error !== 'interrupted' && e.error !== 'canceled') {
           console.warn('TTS playback notice:', e.error);
         }
         this.activeMessageId = null;
         this.currentUtterance = null;
-        this._notify({ state: 'idle', messageId: null, language });
+        this._notify({ state: 'idle', messageId: null, language: selectedLanguage });
         if (options.onError) options.onError(e);
       };
 
-      this.synth.speak(utterance);
+      // Prevent duplicate speech
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
       return true;
     } catch (err) {
       console.warn('SpeechSynthesis error:', err);
@@ -225,4 +313,24 @@ class TTSService {
 }
 
 export const ttsService = new TTSService();
+
+// Setup global listener for async voice loading
+if (typeof window !== 'undefined' && window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    ttsService.loadVoices();
+  };
+}
+
+// Modular standalone function exports
+export function speakText(text, language = 'en', options = {}) {
+  return ttsService.speak(text, language, options);
+}
+
+export function stopSpeaking() {
+  return ttsService.stop();
+}
+
+ttsService.speakText = speakText;
+ttsService.stopSpeaking = stopSpeaking;
+
 export default ttsService;

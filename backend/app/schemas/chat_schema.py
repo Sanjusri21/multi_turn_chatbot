@@ -47,6 +47,7 @@ class ChatResponse(BaseModel):
 class RegenerateRequest(BaseModel):
     conversation_id: str = Field(..., description="ID of conversation to regenerate response in")
     message_id: Optional[str] = Field(None, description="Specific assistant message ID to regenerate, or last if omitted")
+    language: Optional[str] = Field(None, description="Explicit language preference: 'en', 'ta', 'hi'")
 
 class MessageFeedbackRequest(BaseModel):
     message_id: str = Field(..., description="ID of assistant message to give feedback on")

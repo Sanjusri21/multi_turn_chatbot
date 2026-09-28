@@ -1,6 +1,7 @@
 import os
-from typing import Optional
+from typing import Optional, List
 from pathlib import Path
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
@@ -9,6 +10,27 @@ PROJECT_ROOT = BASE_DIR.parent
 DATA_DIR = PROJECT_ROOT / "data"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# Candidate .env locations to search
+candidate_env_files = [
+    BASE_DIR / ".env",
+    PROJECT_ROOT / "backend" / ".env",
+    PROJECT_ROOT / ".env",
+    Path(".env").resolve(),
+    Path("backend/.env").resolve(),
+]
+
+env_files_to_load = []
+for p in candidate_env_files:
+    if p.exists() and p.is_file():
+        p_resolved = p.resolve()
+        p_str = str(p_resolved)
+        if p_str not in env_files_to_load:
+            env_files_to_load.append(p_str)
+            load_dotenv(dotenv_path=p_resolved, override=True)
+
+if not env_files_to_load:
+    env_files_to_load = [str((BASE_DIR / ".env").resolve())]
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "MemoryBot — Multi-Turn AI Chatbot with Persistent Memory"
@@ -69,8 +91,43 @@ class Settings(BaseSettings):
     MAX_CONTEXT_MESSAGES: int = 20
     SUMMARY_TRIGGER_THRESHOLD: int = 14
 
+    def model_post_init(self, __context):
+        # Direct fallback from loaded .env files if empty
+        if not self.GEMINI_API_KEY:
+            for env_path_str in env_files_to_load:
+                env_p = Path(env_path_str)
+                if env_p.exists() and env_p.is_file():
+                    from dotenv import dotenv_values
+                    vals = dotenv_values(env_p)
+                    if vals.get("GEMINI_API_KEY"):
+                        self.GEMINI_API_KEY = vals["GEMINI_API_KEY"]
+                        break
+
+        # Fallback to os.environ if still empty
+        if not self.GEMINI_API_KEY and os.environ.get("GEMINI_API_KEY"):
+            self.GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+        # Strip any extraneous quotes or surrounding whitespace
+        if self.GEMINI_API_KEY:
+            self.GEMINI_API_KEY = self.GEMINI_API_KEY.strip().strip("'").strip('"')
+
+        if not self.OPENAI_API_KEY:
+            for env_path_str in env_files_to_load:
+                env_p = Path(env_path_str)
+                if env_p.exists() and env_p.is_file():
+                    from dotenv import dotenv_values
+                    vals = dotenv_values(env_p)
+                    if vals.get("OPENAI_API_KEY"):
+                        self.OPENAI_API_KEY = vals["OPENAI_API_KEY"]
+                        break
+
+        if not self.OPENAI_API_KEY and os.environ.get("OPENAI_API_KEY"):
+            self.OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+        if self.OPENAI_API_KEY:
+            self.OPENAI_API_KEY = self.OPENAI_API_KEY.strip().strip("'").strip('"')
+
     model_config = SettingsConfigDict(
-        env_file=str(BASE_DIR / ".env"),
+        env_file=tuple(env_files_to_load),
         env_file_encoding="utf-8",
         extra="ignore"
     )

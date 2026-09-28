@@ -46,6 +46,12 @@ def on_startup():
     logger.info("Initializing database tables...")
     init_db()
     logger.info(f"MemoryBot backend started successfully! Provider: {settings.LLM_PROVIDER}")
+    logger.info(f"GEMINI_API_KEY configured: {bool(settings.GEMINI_API_KEY)}")
+    logger.info(f"GEMINI_MODEL: {settings.GEMINI_MODEL}")
+    logger.info(f"LLM_PROVIDER: {settings.LLM_PROVIDER}")
+    print(f"GEMINI_API_KEY configured: {bool(settings.GEMINI_API_KEY)}", flush=True)
+    print(f"GEMINI_MODEL: {settings.GEMINI_MODEL}", flush=True)
+    print(f"LLM_PROVIDER: {settings.LLM_PROVIDER}", flush=True)
 
 # Include Routers with /api prefix
 app.include_router(health_router, prefix="/api")

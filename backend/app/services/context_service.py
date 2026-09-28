@@ -191,11 +191,22 @@ class ContextService:
 
         # 7. Language Directive
         if language == "ta":
-            system_parts.append("[LANGUAGE DIRECTIVE]:\nThe user explicitly selected Tamil (தமிழ்). Respond accurately and fluently in Tamil script.")
+            system_parts.append(
+                "[LANGUAGE DIRECTIVE - MANDATORY]:\n"
+                "Respond in Tamil. Use natural Tamil script. Do not respond in English unless the user explicitly asks for English.\n"
+                "The user's language and the selected response language are separate concepts: regardless of user language or prior conversation history, your entire response must be in natural Tamil script."
+            )
         elif language == "hi":
-            system_parts.append("[LANGUAGE DIRECTIVE]:\nThe user explicitly selected Hindi (हिन्दी). Respond accurately and fluently in Hindi Devanagari script.")
+            system_parts.append(
+                "[LANGUAGE DIRECTIVE - MANDATORY]:\n"
+                "Respond in Hindi. Use natural Devanagari script. Do not respond in English unless the user explicitly asks for English.\n"
+                "The user's language and the selected response language are separate concepts: regardless of user language or prior conversation history, your entire response must be in natural Hindi Devanagari script."
+            )
         elif language == "en":
-            system_parts.append("[LANGUAGE DIRECTIVE]:\nThe user explicitly selected English. Respond in English.")
+            system_parts.append(
+                "[LANGUAGE DIRECTIVE - MANDATORY]:\n"
+                "Respond in English."
+            )
 
         messages.append({
             "role": "system",

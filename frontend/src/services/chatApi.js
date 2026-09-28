@@ -91,10 +91,10 @@ export const chatApi = {
     }
   },
 
-  regenerateResponse: async ({ conversation_id, message_id = null }) => {
+  regenerateResponse: async ({ conversation_id, message_id = null, language = null }) => {
     return await request('/chat/regenerate', {
       method: 'POST',
-      body: JSON.stringify({ conversation_id, message_id }),
+      body: JSON.stringify({ conversation_id, message_id, language }),
     });
   },
 

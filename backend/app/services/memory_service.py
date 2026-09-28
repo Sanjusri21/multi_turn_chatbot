@@ -11,7 +11,13 @@ class MemoryService:
         self.db = db
         self.memory_repo = MemoryRepository(db)
         self.conv_repo = ConversationRepository(db)
-        self.llm_service = llm_service or get_llm_service()
+        self._llm_service = llm_service
+
+    @property
+    def llm_service(self) -> LLMService:
+        if self._llm_service is None:
+            self._llm_service = get_llm_service()
+        return self._llm_service
 
     def list_all_memories(self, user_id: str) -> List[Memory]:
         return self.memory_repo.list_by_user(user_id)

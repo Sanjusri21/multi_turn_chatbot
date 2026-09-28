@@ -121,7 +121,8 @@ def regenerate_response_endpoint(
     return service.regenerate_response(
         user_id=current_user.id,
         conversation_id=request.conversation_id,
-        message_id=request.message_id
+        message_id=request.message_id,
+        language=request.language
     )
 
 @router.post("/feedback", response_model=MessageFeedbackResponse, status_code=status.HTTP_200_OK)
