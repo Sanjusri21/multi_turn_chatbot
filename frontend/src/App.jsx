@@ -51,7 +51,7 @@ export function App() {
           toast.error('Access denied. Administrator privileges required.');
           navigate('/chat');
         } else if (currentPath === '/login' || currentPath === '/signup' || currentPath === '/pending' || currentPath === '/') {
-          navigate(isAdmin && currentPath === '/admin' ? '/admin' : '/chat');
+          navigate(isAdmin ? '/admin' : '/chat');
         }
       }
     }
