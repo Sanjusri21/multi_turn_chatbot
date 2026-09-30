@@ -2,7 +2,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_approved_user
 from app.models.user import User
 from app.services.conversation_service import ConversationService
 from app.schemas.conversation_schema import (
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/conversations", tags=["Conversations"])
 @router.get("", response_model=List[ConversationResponse])
 def get_conversations(
     q: str = "",
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = ConversationService(db)
@@ -29,7 +29,7 @@ def get_conversations(
 @router.get("/search", response_model=List[ConversationResponse])
 def search_conversations_endpoint(
     q: str = "",
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = ConversationService(db)
@@ -38,7 +38,7 @@ def search_conversations_endpoint(
 @router.post("", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
 def create_conversation(
     payload: ConversationCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = ConversationService(db)
@@ -47,7 +47,7 @@ def create_conversation(
 @router.get("/{conversation_id}", response_model=ConversationDetailResponse)
 def get_conversation_detail(
     conversation_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = ConversationService(db)
@@ -68,7 +68,7 @@ def get_conversation_detail(
 @router.get("/{conversation_id}/messages", response_model=List[MessageResponse])
 def get_conversation_messages(
     conversation_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = ConversationService(db)
@@ -81,7 +81,7 @@ def get_conversation_messages(
 def update_conversation(
     conversation_id: str,
     payload: ConversationUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = ConversationService(db)
@@ -93,7 +93,7 @@ def update_conversation(
 @router.delete("/{conversation_id}", status_code=status.HTTP_200_OK)
 def delete_conversation(
     conversation_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = ConversationService(db)

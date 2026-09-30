@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { MessageSquare, Edit2, Trash2, Check, X } from 'lucide-react';
 import { useChatContext } from '../../context/ChatContext';
 
-export function ConversationItem({ conversation, isActive }) {
+export function ConversationItem({ conversation, isActive, onSelect }) {
   const { setCurrentConversationId, renameConversation, deleteConversation } = useChatContext();
   const [isEditing, setIsEditing] = useState(false);
   const [newTitle, setNewTitle] = useState(conversation.title);
 
   const handleSelect = () => {
     setCurrentConversationId(conversation.id);
+    if (onSelect) onSelect();
   };
 
   const handleSaveRename = (e) => {

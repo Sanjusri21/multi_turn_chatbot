@@ -3,7 +3,7 @@ import { ConversationItem } from './ConversationItem';
 import { useChatContext } from '../../context/ChatContext';
 import { chatApi } from '../../services/chatApi';
 
-export function ConversationList({ searchQuery = '' }) {
+export function ConversationList({ searchQuery = '', onSelectConversation }) {
   const { conversations, currentConversationId } = useChatContext();
   const [searchResults, setSearchResults] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -96,6 +96,7 @@ export function ConversationList({ searchQuery = '' }) {
             key={conv.id}
             conversation={conv}
             isActive={conv.id === currentConversationId}
+            onSelect={onSelectConversation}
           />
         ))}
       </div>

@@ -219,6 +219,22 @@ def _run_schema_migrations() -> None:
             inspector = inspect(conn)
             tables = set(inspector.get_table_names())
 
+            if "users" in tables:
+                for column_name, definition in [
+                    ("role", "VARCHAR(20) DEFAULT 'USER'"),
+                    ("account_status", "VARCHAR(20) DEFAULT 'PENDING'"),
+                    ("approved_at", "DATETIME"),
+                    ("approved_by", "VARCHAR(36)"),
+                ]:
+                    inspector = inspect(conn)
+                    _add_column_if_missing(
+                        conn,
+                        inspector,
+                        "users",
+                        column_name,
+                        definition,
+                    )
+
             if "conversations" in tables:
                 _add_column_if_missing(
                     conn,
@@ -268,6 +284,23 @@ def _run_schema_migrations() -> None:
     with engine.begin() as conn:
         inspector = inspect(conn)
         tables = set(inspector.get_table_names())
+
+        # Existing users table
+        if "users" in tables:
+            for column_name, definition in [
+                ("role", "VARCHAR(20) DEFAULT 'USER'"),
+                ("account_status", "VARCHAR(20) DEFAULT 'PENDING'"),
+                ("approved_at", "TIMESTAMP"),
+                ("approved_by", "VARCHAR(36)"),
+            ]:
+                inspector = inspect(conn)
+                _add_column_if_missing(
+                    conn,
+                    inspector,
+                    "users",
+                    column_name,
+                    definition,
+                )
 
         # Existing conversations table
         if "conversations" in tables:
@@ -376,16 +409,15 @@ def init_db() -> None:
     )
 
     # ---------------------------------------------------------
-    # Demo user for local development
+    # Demo user & Admin bootstrapping for local development
     # ---------------------------------------------------------
-    if settings.DEMO_USER_ENABLED:
-        from app.models.user import User
-        from app.models.user_settings import UserSettings
-        from app.core.security import hash_password
+    from app.models.user import User
+    from app.models.user_settings import UserSettings
+    from app.core.security import hash_password
 
-        db = SessionLocal()
-
-        try:
+    db = SessionLocal()
+    try:
+        if settings.DEMO_USER_ENABLED:
             demo_user = (
                 db.query(User)
                 .filter(User.email == "sanju@example.com")
@@ -397,6 +429,8 @@ def init_db() -> None:
                     name="Sanju",
                     email="sanju@example.com",
                     hashed_password=hash_password("Password123!"),
+                    role="ADMIN",
+                    account_status="APPROVED",
                 )
 
                 db.add(demo_user)
@@ -409,6 +443,24 @@ def init_db() -> None:
 
                 db.add(user_settings)
                 db.commit()
+            else:
+                # Ensure demo user has admin role and approved status
+                if demo_user.role != "ADMIN" or demo_user.account_status != "APPROVED":
+                    demo_user.role = "ADMIN"
+                    demo_user.account_status = "APPROVED"
+                    db.commit()
 
-        finally:
-            db.close()
+        # Promote ADMIN_EMAIL if configured
+        if getattr(settings, "ADMIN_EMAIL", None) and settings.ADMIN_EMAIL.strip():
+            admin_target = (
+                db.query(User)
+                .filter(User.email == settings.ADMIN_EMAIL.strip().lower())
+                .first()
+            )
+            if admin_target:
+                admin_target.role = "ADMIN"
+                admin_target.account_status = "APPROVED"
+                db.commit()
+
+    finally:
+        db.close()

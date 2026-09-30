@@ -15,6 +15,10 @@ class UserResponse(BaseModel):
     id: str
     name: str
     email: str
+    role: str = "USER"
+    account_status: str = "PENDING"
+    approved_at: Optional[datetime] = None
+    approved_by: Optional[str] = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 

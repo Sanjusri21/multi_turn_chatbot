@@ -11,6 +11,7 @@ import './styles/sidebar.css';
 import './styles/settings.css';
 import './styles/robot.css';
 import './styles/animations.css';
+import './styles/admin.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

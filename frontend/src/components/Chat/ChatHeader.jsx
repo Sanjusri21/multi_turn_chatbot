@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Bookmark, Settings, Sun, Moon, User, LogOut, Sparkles, Globe, Volume2, VolumeX, ChevronDown } from 'lucide-react';
+import { Bot, Bookmark, Settings, Sun, Moon, User, LogOut, Sparkles, Globe, Volume2, VolumeX, ChevronDown, Menu, ShieldCheck } from 'lucide-react';
 import { useChatContext } from '../../context/ChatContext';
 import { useAuth } from '../../hooks/useAuth';
 
-export function ChatHeader({ onOpenMemory, onOpenSettings }) {
+export function ChatHeader({ onOpenMemory, onOpenSettings, onToggleMobileSidebar, onNavigateToAdmin }) {
   const {
     memories,
     userSettings,
@@ -54,21 +54,31 @@ export function ChatHeader({ onOpenMemory, onOpenSettings }) {
 
   return (
     <header className="chat-top-header">
-      {/* Left: Zara Branding & Status */}
+      {/* Left: Mobile Hamburger & Zara Branding */}
       <div className="header-left-col">
+        {/* Mobile Hamburger Drawer Toggle (☰) */}
+        <button
+          className="mobile-hamburger-btn show-on-mobile-only"
+          onClick={onToggleMobileSidebar}
+          title="Open Menu Drawer"
+          aria-label="Open Menu Drawer"
+        >
+          <Menu size={20} />
+        </button>
+
         <div className="header-brand-box">
           <div className="header-robot-glow-icon">
             <Sparkles size={18} color="#050b14" />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span className="header-brand-title" style={{ lineHeight: 1.1 }}>Zara</span>
-            <span style={{ fontSize: '0.68rem', color: 'var(--accent-cyan, #06b6d4)', fontWeight: 600, letterSpacing: '0.5px' }}>
+            <span style={{ fontSize: '0.68rem', color: 'var(--accent-cyan, #06b6d4)', fontWeight: 600, letterSpacing: '0.5px' }} className="hide-on-mobile">
               AI Assistant
             </span>
           </div>
         </div>
 
-        <div className="header-status-pill" title="Zara AI Voice Assistant Active">
+        <div className="header-status-pill hide-on-mobile" title="Zara AI Voice Assistant Active">
           <span className="header-status-dot" />
           <span className="header-model-tag" style={{ fontSize: '0.75rem', color: 'var(--text-secondary, #94a3b8)', marginLeft: '4px' }}>
             Zara 2.0
@@ -205,6 +215,30 @@ export function ChatHeader({ onOpenMemory, onOpenSettings }) {
           {currentTheme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
         </button>
 
+        {/* Admin Console Quick Button (for ADMIN users) */}
+        {user?.role === 'ADMIN' && (
+          <button
+            className="header-action-btn admin-quick-btn"
+            onClick={onNavigateToAdmin}
+            title="Open Admin Console"
+            style={{
+              background: 'rgba(139, 92, 246, 0.16)',
+              border: '1px solid rgba(139, 92, 246, 0.4)',
+              color: '#c084fc',
+              padding: '6px 10px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+            }}
+          >
+            <ShieldCheck size={16} />
+            <span className="hide-on-mobile">Admin</span>
+          </button>
+        )}
+
         {/* Settings Button */}
         <button
           className="header-action-btn"
@@ -235,6 +269,19 @@ export function ChatHeader({ onOpenMemory, onOpenSettings }) {
               </div>
 
               <div className="profile-dropdown-items">
+                {user?.role === 'ADMIN' && (
+                  <button
+                    className="profile-dropdown-item"
+                    onClick={() => {
+                      setIsProfileOpen(false);
+                      if (onNavigateToAdmin) onNavigateToAdmin();
+                    }}
+                  >
+                    <ShieldCheck size={15} color="#c084fc" />
+                    <span style={{ color: '#c084fc' }}>Admin Console</span>
+                  </button>
+                )}
+
                 <button
                   className="profile-dropdown-item"
                   onClick={() => {

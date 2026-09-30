@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_approved_user
 from app.models.user import User
 from app.schemas.chat_schema import (
     ChatRequest,
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 @router.post("", response_model=ChatResponse, status_code=status.HTTP_200_OK)
 def send_chat_message(
     request: ChatRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -91,7 +91,7 @@ def send_chat_message(
 @router.post("/stream")
 def send_chat_message_stream(
     request: ChatRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -127,7 +127,7 @@ def send_chat_message_stream(
 @router.post("/regenerate", response_model=ChatResponse, status_code=status.HTTP_200_OK)
 def regenerate_response_endpoint(
     request: RegenerateRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -145,7 +145,7 @@ def regenerate_response_endpoint(
 @router.post("/feedback", response_model=MessageFeedbackResponse, status_code=status.HTTP_200_OK)
 def submit_feedback_endpoint(
     request: MessageFeedbackRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -162,7 +162,7 @@ def submit_feedback_endpoint(
 @router.get("/debug-context", response_model=MemoryDebuggerResponse)
 def get_memory_debug_context(
     conversation_id: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     """

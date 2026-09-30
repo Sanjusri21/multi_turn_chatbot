@@ -74,12 +74,23 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const isApproved = !!user && (user.account_status === 'APPROVED' || user.role === 'ADMIN');
+  const isPending = !!user && user.account_status === 'PENDING' && user.role !== 'ADMIN';
+  const isAdmin = !!user && user.role === 'ADMIN';
+  const isRejected = !!user && user.account_status === 'REJECTED';
+  const isSuspended = !!user && user.account_status === 'SUSPENDED';
+
   return (
     <AuthContext.Provider
       value={{
         user,
         token,
         isAuthenticated: !!token && !!user,
+        isApproved,
+        isPending,
+        isAdmin,
+        isRejected,
+        isSuspended,
         isLoading,
         login,
         signup,

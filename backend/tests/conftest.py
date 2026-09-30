@@ -22,7 +22,8 @@ import app.models.message_feedback
 import app.models.web_search_log
 from app.services.llm_service import MockLLMProvider, LLMService
 from app.services.auth_service import AuthService
-from app.schemas.auth_schema import UserSignupRequest
+from app.schemas.auth_schema import UserSignupRequest, UserResponse
+from app.models.user import User
 
 # Test SQLite in-memory database
 TEST_DB_URL = "sqlite:///:memory:"
@@ -55,4 +56,25 @@ def test_user(test_db):
         email="sanju@example.com",
         password="Password123!"
     ))
-    return token_resp.user
+    # Mark standard test user as APPROVED for test fixtures
+    user = test_db.query(User).filter(User.id == token_resp.user.id).first()
+    user.account_status = "APPROVED"
+    user.role = "USER"
+    test_db.commit()
+    test_db.refresh(user)
+    return UserResponse.model_validate(user)
+
+@pytest.fixture
+def admin_user(test_db):
+    auth_service = AuthService(test_db)
+    token_resp = auth_service.signup(UserSignupRequest(
+        name="Admin",
+        email="admin@example.com",
+        password="AdminPassword123!"
+    ))
+    user = test_db.query(User).filter(User.id == token_resp.user.id).first()
+    user.account_status = "APPROVED"
+    user.role = "ADMIN"
+    test_db.commit()
+    test_db.refresh(user)
+    return UserResponse.model_validate(user)

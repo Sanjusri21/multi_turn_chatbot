@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_approved_user
 from app.models.user import User
 from app.services.memory_service import MemoryService
 from app.schemas.memory_schema import MemoryResponse, MemoryCreate, MemoryUpdate
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/memories", tags=["Memories"])
 def get_memories(
     category: Optional[str] = Query(None),
     query: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = MemoryService(db)
@@ -26,7 +26,7 @@ def get_memories(
 @router.get("/relevant", response_model=List[MemoryResponse])
 def get_relevant_memories(
     query: str = Query(..., min_length=1),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = MemoryService(db)
@@ -35,7 +35,7 @@ def get_relevant_memories(
 @router.post("", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED)
 def create_memory(
     payload: MemoryCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = MemoryService(db)
@@ -55,7 +55,7 @@ def create_memory(
 def update_memory(
     memory_id: str,
     payload: MemoryUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = MemoryService(db)
@@ -76,7 +76,7 @@ def update_memory(
 @router.delete("/{memory_id}", status_code=status.HTTP_200_OK)
 def delete_memory(
     memory_id: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = MemoryService(db)
@@ -87,7 +87,7 @@ def delete_memory(
 
 @router.delete("", status_code=status.HTTP_200_OK)
 def clear_all_memories(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = MemoryService(db)

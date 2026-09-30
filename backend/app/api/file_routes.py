@@ -4,7 +4,7 @@ from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.security import get_current_user, decode_access_token, security_bearer
+from app.core.security import get_current_approved_user, decode_access_token, security_bearer
 from app.models.user import User
 from app.services.file_service import FileService
 from app.schemas.file_schema import FileUploadResponse
@@ -41,12 +41,19 @@ def get_file_view_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found."
         )
+
+    if user.role != "ADMIN" and user.account_status != "APPROVED":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is not approved to access files."
+        )
+
     return user
 
 @router.post("/upload", response_model=FileUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_file(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_approved_user),
     db: Session = Depends(get_db)
 ):
     service = FileService(db)

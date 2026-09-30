@@ -21,10 +21,13 @@ class AuthService:
             )
 
         hashed_pw = hash_password(data.password)
+        # New users default to USER role and PENDING account_status
         user = self.user_repo.create(
             name=data.name,
             email=data.email,
-            hashed_password=hashed_pw
+            hashed_password=hashed_pw,
+            role="USER",
+            account_status="PENDING"
         )
 
         # Initialize default user settings
@@ -43,6 +46,29 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password."
             )
+
+        # Allow ADMIN unconditionally, otherwise verify account_status is APPROVED
+        if user.role != "ADMIN" and user.account_status != "APPROVED":
+            if user.account_status == "PENDING":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your account is pending approval."
+                )
+            elif user.account_status == "REJECTED":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your account request was rejected. Please contact the administrator."
+                )
+            elif user.account_status == "SUSPENDED":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your account has been suspended. Please contact the administrator."
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied. Your account is not approved."
+                )
 
         token = create_access_token(data={"sub": user.id, "email": user.email})
         return TokenResponse(

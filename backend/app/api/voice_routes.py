@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
-from app.core.security import get_current_user
+from app.core.security import get_current_approved_user
 from app.models.user import User
 
 router = APIRouter(prefix="/voice", tags=["Voice"])
@@ -25,7 +25,7 @@ class TranscribeResponse(BaseModel):
 @router.post("/speak", response_model=SpeakResponse)
 def voice_speak(
     payload: SpeakRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_approved_user)
 ):
     """
     Returns voice synthesis configuration and target language metadata for Zara speech output.
@@ -48,7 +48,7 @@ def voice_speak(
 async def voice_transcribe(
     file: Optional[UploadFile] = File(None),
     language: Optional[str] = Form("en"),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_approved_user)
 ):
     """
     Speech-to-text audio endpoint with metadata support for English, Tamil, and Hindi.

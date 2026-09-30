@@ -7,10 +7,11 @@ import { SettingsModal } from '../components/Settings/SettingsModal';
 import { RotoBot } from '../components/Robot/RotoBot';
 import { useChatContext } from '../context/ChatContext';
 
-export function ChatPage() {
+export function ChatPage({ onNavigateToAdmin }) {
   const { userSettings } = useChatContext();
   const [isMemoryOpen, setIsMemoryOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [activeNav, setActiveNav] = useState('chat');
 
   const handleOpenMemory = () => {
@@ -39,15 +40,20 @@ export function ChatPage() {
       <ChatHeader
         onOpenMemory={handleOpenMemory}
         onOpenSettings={handleOpenSettings}
+        onToggleMobileSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
+        onNavigateToAdmin={onNavigateToAdmin}
       />
 
-      {/* 2. MAIN WORKSPACE - Left: 280-300px Sidebar | Right: Chat Area */}
+      {/* 2. MAIN WORKSPACE - Left: Responsive Sidebar / Mobile Drawer | Right: Chat Area */}
       <div className="chat-body-workspace">
         <Sidebar
           activeNav={activeNav}
           setActiveNav={setActiveNav}
           onOpenMemory={handleOpenMemory}
           onOpenSettings={handleOpenSettings}
+          isOpenMobile={isMobileSidebarOpen}
+          onCloseMobile={() => setIsMobileSidebarOpen(false)}
+          onNavigateToAdmin={onNavigateToAdmin}
         />
 
         <main className="chat-content-container">
@@ -62,7 +68,7 @@ export function ChatPage() {
         onClose={handleCloseMemory}
       />
 
-      {/* ChatGPT-style Settings Modal */}
+      {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={handleCloseSettings}
@@ -74,3 +80,5 @@ export function ChatPage() {
     </div>
   );
 }
+
+export default ChatPage;
